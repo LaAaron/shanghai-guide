@@ -63,7 +63,11 @@
       <button type="button" class="map-fab" id="locate-btn" data-state="off" aria-pressed="false" aria-label="Show where I am" title="Show where I am">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 4L4 10.5l6.5 2.5 2.5 6.5z"/></svg>
       </button>
-      <div class="pickbar" id="pickbar" hidden><span>Tap the map to place the pin</span><button type="button" id="pick-cancel">Cancel</button></div>
+      <div class="pickbar" id="pickbar" hidden>
+        <div class="pk-text"><b>Move the pin, then tap it to confirm</b><span id="pk-info">Tap the map, or hold and drag the pin</span></div>
+        <button type="button" id="pick-cancel">Cancel</button>
+        <button type="button" id="pick-ok" class="ok">Confirm</button>
+      </div>
       <div class="map-credit">© OpenStreetMap contributors · Overture Maps (ODbL) · streets &amp; stations within ~10 km of your spots</div>
     </div>
   </main>

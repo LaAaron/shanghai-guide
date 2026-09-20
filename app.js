@@ -717,7 +717,7 @@
     map.on('zoomend', zoomStyle); zoomStyle();
     map.setMaxBounds(geo.getBounds().pad(0.2));
     $('fit-btn').addEventListener('click', fitVisible);
-    map.on('click', e => { if (picking){ setLoc(e.latlng.lat, e.latlng.lng, 'picked on map'); endPick(true); } });
+    map.on('click', e => { if (picking) movePicker(e.latlng); });
     map.on('contextmenu', e => { if (!picking) showAddHere(e.latlng); });
     $('map-legend').open = !isMobile();
     new ResizeObserver(() => map.invalidateSize()).observe($('map-pane'));
@@ -880,7 +880,7 @@
   }
 
   /* ---------- Add-a-find sheet ---------- */
-  let picking = false, pickMarker = null;
+  let picking = false, pickMarker = null, picker = null;
   function clearPickMarker(){ if (pickMarker && map){ map.removeLayer(pickMarker); } pickMarker = null; }
   const addSheet = makeSheet($('add-sheet-backdrop'), $('add-sheet'), () => { if (!picking) clearPickMarker(); });
   const addForm = $('add-form');
@@ -942,18 +942,60 @@
     }, { enableHighAccuracy:true, timeout:15000, maximumAge:30000 });
   });
 
+  // ---- pick on map: a glowing pin hovers over the target. Tap the map (or hold + drag the pin) to move it; tap the pin to confirm.
+  function nearestMetro(ll){
+    let best = null;
+    METRO_STATIONS.forEach(s => { const d = distanceM([ll.lat, ll.lng], [s[1], s[2]]); if (!best || d < best.d) best = { d, name:s[0] }; });
+    return best;
+  }
+  function pickInfo(){
+    if (!picker) return;
+    const ll = picker.getLatLng(), nm = nearestMetro(ll);
+    $('pk-info').textContent = ll.lat.toFixed(5) + ', ' + ll.lng.toFixed(5) + (nm ? ' · ' + fmtDist(nm.d) + ' from ' + nm.name + ' metro' : '') + (map.getZoom() < 16 ? ' · zoom in to be more precise' : '');
+  }
+  function pickerIcon(){
+    const c = CATEGORIES[catSelect.value] || CATEGORIES.other;
+    return L.divIcon({
+      className:'pk-icon', iconSize:[44, 60], iconAnchor:[22, 54],
+      html:'<div class="pk"><i class="pk-glow"></i><i class="pk-ground"></i>' +
+        '<svg class="pk-pin" viewBox="0 0 34 42" aria-hidden="true"><path d="M17 40C15 36 4.5 27.5 3.5 16A13.5 13.5 0 1 1 30.5 16C29.5 27.5 19 36 17 40z" fill="' + c.color + '" stroke="' + c.ink + '" stroke-opacity=".6" stroke-width="1.8" stroke-linejoin="round"/><circle cx="17" cy="16" r="5.5" fill="#fff"/></svg></div>'
+    });
+  }
+  const pkEl = () => picker && picker.getElement() && picker.getElement().querySelector('.pk');
+  function hop(){ const e = pkEl(); if (!e) return; e.classList.remove('drop'); void e.offsetWidth; e.classList.add('drop'); }
   function startPick(){
     if (!map) { showLoc('The map isn’t available right now.', 'err'); return; }
-    picking = true; addSheet.close();
+    picking = true; addSheet.close(); map.closePopup();
     if (isMobile()) switchTab('map');
+    const lat = parseFloat($('f-lat').value), lng = parseFloat($('f-lng').value);
+    const start = isFinite(lat) && isFinite(lng) && inArea(lat, lng) ? L.latLng(lat, lng) : map.getCenter();
+    if (isFinite(lat) && isFinite(lng) && inArea(lat, lng)) map.setView(start, Math.max(map.getZoom(), 16), { animate:false });
+    clearPickMarker();
+    picker = L.marker(start, { icon:pickerIcon(), draggable:true, autoPan:true, autoPanPadding:[70, 90], keyboard:false, zIndexOffset:6000 }).addTo(map);
+    picker.on('dragstart', () => { const e = pkEl(); if (e) e.classList.add('lift'); });
+    picker.on('drag', pickInfo);
+    picker.on('dragend', () => { const e = pkEl(); if (e) e.classList.remove('lift'); pickInfo(); });
+    picker.on('click', confirmPick);                                   // a plain tap on the pin confirms (dragging never fires 'click')
     $('pickbar').hidden = false; $('map').classList.add('picking');
+    pickInfo(); hop();
   }
   function endPick(reopen){
     picking = false; $('pickbar').hidden = true; $('map').classList.remove('picking');
+    if (picker){ map.removeLayer(picker); picker = null; }
     if (reopen) addSheet.open();
   }
+  function confirmPick(){
+    if (!picker) return;
+    const ll = picker.getLatLng();
+    endPick(false);
+    setLoc(ll.lat, ll.lng, 'picked on map');
+    addSheet.open();
+  }
+  function movePicker(ll){ if (!picker) return; picker.setLatLng(ll); pickInfo(); hop(); }
   $('loc-pick').addEventListener('click', startPick);
   $('pick-cancel').addEventListener('click', () => endPick(true));
+  $('pick-ok').addEventListener('click', confirmPick);
+  document.addEventListener('keydown', e => { if (!picking) return; if (e.key === 'Enter'){ e.preventDefault(); confirmPick(); } else if (e.key === 'Escape') endPick(true); });
 
   // ---- sharing: opens a pre-filled GitHub issue; a GitHub job checks who sent it and adds it for everyone
   function shareUrl(p){

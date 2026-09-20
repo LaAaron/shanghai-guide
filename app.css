@@ -522,11 +522,16 @@
   .local-tag button:active{ opacity:.6; }
   .pickbar{
     position:absolute; left:50%; bottom:calc(var(--tab-h) + 44px); z-index:900; transform:translateX(-50%);
-    display:flex; align-items:center; gap:12px; width:max-content; max-width:calc(100% - 24px);
-    padding:9px 9px 9px 16px; border-radius:16px; background:var(--surface);
-    box-shadow:var(--shadow-pop), 0 0 0 .5px var(--sep); font-size:14px; font-weight:500;
+    display:flex; align-items:center; gap:10px; width:max-content; max-width:calc(100% - 20px);
+    padding:10px 10px 10px 16px; border-radius:18px; background:var(--surface);
+    box-shadow:var(--shadow-pop), 0 0 0 .5px var(--sep);
   }
-  .pickbar button{ height:30px; padding:0 13px; border:0; border-radius:15px; background:var(--fill); color:var(--label); font-size:13.5px; font-weight:600; }
+  .pk-text{ display:flex; flex-direction:column; gap:2px; min-width:0; flex:1 1 auto; }
+  .pk-text b{ font-size:14px; font-weight:600; letter-spacing:-.005em; }
+  .pk-text span{ font-size:12.5px; line-height:1.3; color:var(--label-2); font-variant-numeric:tabular-nums; }
+  .pickbar button{ flex:0 0 auto; height:32px; padding:0 14px; border:0; border-radius:16px; background:var(--fill); color:var(--label); font-size:13.5px; font-weight:600; }
+  .pickbar button.ok{ background:var(--accent); color:#fff; }
+  .pickbar button:active{ opacity:.6; }
   #map.picking, #map.picking .leaflet-interactive, #map.picking .leaflet-grab{ cursor:crosshair !important; }
 
 
@@ -547,3 +552,24 @@
   .chip-near svg{ width:14px; height:14px; fill:none; }
   .chip-near.active svg{ fill:currentColor; }
   @media (prefers-reduced-motion: reduce){ .me-dot::after{ animation:none; opacity:.5; } #locate-btn[data-state="locating"] svg{ animation:none; } }
+
+
+  /* ============ Pick on map: a hovering, glowing pin ============ */
+  .pk-icon{ pointer-events:auto; cursor:grab !important; }
+  .pk-icon:active{ cursor:grabbing !important; }
+  .pk{ position:relative; width:44px; height:60px; }
+  .pk-ground{ position:absolute; left:50%; top:54px; width:22px; height:8px; margin:-4px 0 0 -11px; border-radius:50%; background:rgba(60,40,20,.30); filter:blur(1.5px); transition:transform .2s var(--ease-out), opacity .2s; }
+  .pk-glow{ position:absolute; left:50%; top:54px; width:14px; height:14px; margin:-7px 0 0 -7px; border-radius:50%; background:radial-gradient(circle, rgba(91,134,238,.7), rgba(91,134,238,0) 70%); animation:pkglow 1.7s ease-in-out infinite; }
+  @keyframes pkglow{ 0%,100%{ transform:scale(1); opacity:.95; } 50%{ transform:scale(3.4); opacity:.25; } }
+  .pk-pin{ position:absolute; left:5px; top:12px; width:34px; height:42px; transform:translateY(-6px); filter:drop-shadow(0 0 7px rgba(91,134,238,.75)); animation:pkbob 1.7s ease-in-out infinite; }
+  @keyframes pkbob{ 0%,100%{ transform:translateY(-5px); } 50%{ transform:translateY(-11px); } }
+  .pk.lift .pk-pin{ animation:none; transform:translateY(-22px) scale(1.12); transition:transform .18s var(--ease-out); }
+  .pk.lift .pk-ground{ transform:scale(.65); opacity:.55; }
+  .pk.drop .pk-pin{ animation:pkdrop .38s var(--ease-out); }
+  @keyframes pkdrop{ 0%{ transform:translateY(-26px); } 65%{ transform:translateY(-2px); } 100%{ transform:translateY(-5px); } }
+  #map.picking .leaflet-marker-icon:not(.pk-icon), #map.picking .leaflet-tooltip{ pointer-events:none !important; }   /* taps go to the map, not to other pins */
+  @media (prefers-reduced-motion: reduce){ .pk-pin,.pk-glow{ animation:none; } .pk.drop .pk-pin{ animation:none; } }
+
+  /* Long-press / drag on the map must never select or highlight anything (iOS paints the whole map blue) */
+  #map, #map *{ -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+  #map .leaflet-popup-content, #map .leaflet-popup-content *{ -webkit-user-select:text; user-select:text; }
