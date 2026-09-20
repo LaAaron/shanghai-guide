@@ -53,14 +53,24 @@
   function districts(){ return Array.from(new Set(allPlaces().map(p => p.district))).sort(); }
   function findPlace(id){ return allPlaces().find(x => x.id === id); }
 
+  function matchesSearch(p){
+    if (!searchTerm) return true;
+    return (p.name + " " + (p.zh||"") + " " + p.addr + " " + (p.note||"")).toLowerCase().includes(searchTerm);
+  }
   function matchesFilters(p){
     if (activeCat !== "all" && p.cat !== activeCat) return false;
     if (activeDistrict !== "all" && p.district !== activeDistrict) return false;
-    if (searchTerm){
-      const hay = (p.name + " " + (p.zh||"") + " " + p.addr + " " + (p.note||"")).toLowerCase();
-      if (!hay.includes(searchTerm)) return false;
-    }
-    return true;
+    return matchesSearch(p);
+  }
+  // How many spots each category chip / district option would show right now, given the OTHER filter and the search.
+  function chipCounts(){
+    const byCat = {}, byDist = {};
+    allPlaces().forEach(p => {
+      if (!matchesSearch(p)) return;
+      if (activeDistrict === "all" || p.district === activeDistrict) byCat[p.cat] = (byCat[p.cat] || 0) + 1;
+      if (activeCat === "all" || p.cat === activeCat) byDist[p.district] = (byDist[p.district] || 0) + 1;
+    });
+    return { byCat, byDist };
   }
 
   /* ---------- Filter chips (built once; only state toggles after) ---------- */
@@ -81,7 +91,11 @@
       sel.setAttribute('aria-label', 'Filter by district');
       const o0 = document.createElement('option'); o0.value = 'all'; o0.textContent = 'All districts'; sel.appendChild(o0);
       ds.forEach(d => { const o = document.createElement('option'); o.value = d; o.textContent = d; sel.appendChild(o); });
-      sel.addEventListener('change', () => { activeDistrict = sel.value; render(); });
+      sel.addEventListener('change', () => {
+        activeDistrict = sel.value;
+        if (activeCat !== 'all' && !allPlaces().some(p => p.cat === activeCat && (activeDistrict === 'all' || p.district === activeDistrict))) activeCat = 'all';   // nothing of that kind here
+        render();
+      });
       wrap.appendChild(sel);
       catChipRow.appendChild(wrap);
 
@@ -98,13 +112,24 @@
       mk('All', 'all', null);
       Object.keys(CATEGORIES).forEach(k => mk(CATEGORIES[k].label, k, CATEGORIES[k].color));
     }
-    $('district-select').value = activeDistrict;
+    const { byCat, byDist } = chipCounts();
+    const dsel = $('district-select');
+    Array.from(dsel.options).forEach(o => {
+      if (o.value === 'all') return;
+      const n = byDist[o.value] || 0;
+      o.textContent = o.value + ' · ' + n;
+      o.disabled = n === 0 && o.value !== activeDistrict;                  // no spots of the chosen kind in that district
+    });
+    dsel.value = activeDistrict;
     const dc = $('district-chip');
     dc.classList.toggle('active', activeDistrict !== 'all');
     dc.querySelector('.chip-label').textContent = activeDistrict === 'all' ? 'All districts' : activeDistrict;
     catChipRow.querySelectorAll('button.chip').forEach(b => {
-      const on = b.dataset.cat === activeCat;
+      const key = b.dataset.cat, on = key === activeCat;
+      const empty = key !== 'all' && !on && !(byCat[key] > 0);              // greyed out and unselectable: nothing to show
       b.classList.toggle('active', on);
+      b.classList.toggle('dim', empty);
+      b.disabled = empty;
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
   }
@@ -135,6 +160,7 @@
   function renderList(){
     const filtered = allPlaces().filter(matchesFilters);
     visibleCount.textContent = filtered.length;
+    if (visibleCount.nextSibling) visibleCount.nextSibling.textContent = filtered.length === 1 ? ' spot' : ' spots';
 
     if (filtered.length === 0){
       listPane.innerHTML = '<div class="empty-msg">Nothing matches those filters.<br><button type="button" class="dir-btn primary" data-act="reset">Clear filters</button></div>';
@@ -618,13 +644,20 @@
     map.on('moveend zoomend', labelsSoon);
 
     // ---- Metro stations: only the ones in view are put on the map ----
-    const stIcon = L.divIcon({ className:'', html:'<div class="metro-dot">M</div>', iconSize:[18,18], iconAnchor:[9,9] });
+    const stIcon = L.divIcon({ className:'metro-hit', html:'<div class="metro-dot">M</div>', iconSize:[44,44], iconAnchor:[22,22] });   // 44px hit area around the 18px dot
     const stMarkers = {};
     function stMarker(i){
       if (stMarkers[i]) return stMarkers[i];
       const s = METRO_STATIONS[i];
       const m = L.marker([s[1], s[2]], { icon: stIcon, keyboard:false, zIndexOffset:-500 });
+      m.on('click', () => {                                                    // runs before Leaflet opens the popup: keep it clear of the header / tab bar
+        const pad = mapPad(), po = m.getPopup().options;
+        po.autoPanPaddingTopLeft = [16, pad.top]; po.autoPanPaddingBottomRight = [16, pad.bottom];
+      });
       m.bindPopup('<div class="pp"><div class="pp-cat">Metro station</div><div class="pp-title">' + esc(s[0]) + '</div><div class="dir-row"><button type="button" class="dir-btn primary" data-dir="st:' + i + '">Directions</button></div></div>', { closeButton:false });
+      const dot = () => { const e = m.getElement(); return e && e.querySelector('.metro-dot'); };
+      m.on('popupopen', () => { const d = dot(); if (d) d.classList.add('sel'); });
+      m.on('popupclose', () => { const d = dot(); if (d) d.classList.remove('sel'); });
       return stMarkers[i] = m;
     }
     function updateStations(){
@@ -635,7 +668,11 @@
         if (show){
           const mk = stMarker(i);
           if (!map.hasLayer(mk)) mk.addTo(map);
-          if (labels && !mk.getTooltip()) mk.bindTooltip(s[0], { permanent:true, direction:'right', offset:[8,0], className:'metro-label' }).openTooltip();
+          if (labels && !mk.getTooltip()){
+            mk.bindTooltip(s[0], { permanent:true, direction:'right', offset:[12,0], className:'metro-label' }).openTooltip();
+            const te = mk.getTooltip().getElement();                          // the station name is tappable too
+            if (te){ te.style.pointerEvents = 'auto'; te.style.cursor = 'pointer'; L.DomEvent.on(te, 'click', ev => { L.DomEvent.stopPropagation(ev); mk.fire('click'); mk.openPopup(); }); }
+          }
           if (!labels && mk.getTooltip()) mk.unbindTooltip();
         } else if (m && map.hasLayer(m)){
           if (m.getTooltip()) m.unbindTooltip();

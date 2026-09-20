@@ -140,6 +140,8 @@
   .chip .dot{ width:9px; height:9px; border-radius:50%; flex:0 0 auto; box-shadow:inset 0 0 0 1px rgba(60,40,20,.14); }
   .chip.active{ background:var(--accent-soft); color:var(--accent-ink); font-weight:600; box-shadow:inset 0 0 0 1.5px var(--accent); }
   .chip:active{ transform:scale(.96); }
+  .chip:disabled,.chip.dim{ opacity:.38; cursor:default; pointer-events:none; }         /* nothing of this kind in the chosen district */
+  .chip.dim .dot{ filter:grayscale(1); }
   .chip-select{ padding-right:9px; gap:5px; }
   .chip-select svg{ width:10px; height:10px; opacity:.6; flex:0 0 auto; }
   .chip-select select{
@@ -272,7 +274,9 @@
   .gpin{ width:34px; height:42px; transform-origin:50% 100%; transition:transform .22s var(--ease-out); }
   .gpin svg{ width:34px; height:42px; display:block; }
   .gpin.sel{ transform:scale(1.3); }
-  .metro-dot{ width:18px; height:18px; border-radius:50%; background:#F0625F; color:#fff; font:700 11px/18px Arial,sans-serif; text-align:center; border:2px solid #fff; box-shadow:0 1px 3px rgba(0,0,0,.35); }
+  .metro-hit{ display:grid; place-items:center; }
+  .metro-dot.sel{ transform:scale(1.3); }
+  .metro-dot{ transition:transform .2s var(--ease-out); width:18px; height:18px; border-radius:50%; background:#F0625F; color:#fff; font:700 11px/18px Arial,sans-serif; text-align:center; border:2px solid #fff; box-shadow:0 1px 3px rgba(0,0,0,.35); }
   .metro-label{
     background:var(--material) !important; border:0 !important; border-radius:6px !important;
     color:var(--label) !important; font:600 11px var(--font) !important; padding:1px 6px !important;
