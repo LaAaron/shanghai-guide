@@ -5,8 +5,8 @@
  * file never re-downloads the 9 MB of map data. The app always opens from the cache first and never waits on the
  * network, so a blocked or slow host (e.g. in mainland China) changes nothing: you keep the version you have.
  */
-const VERSION = '5e5dad7e';
-const ASSETS = [["index.html", "56f1f4bd8a5d", 15788], ["app.css", "ea7daf63e521", 41393], ["app.js", "ba66a21dbd88", 98402], ["pwa.js", "e8a289107c5d", 4261], ["manifest.webmanifest", "8fa634652291", 705], ["vendor/leaflet.css", "be951f3a2ed0", 14165], ["vendor/leaflet.js", "db49d009c841", 147552], ["data/places.js", "9a61bbebfef3", 24028], ["data/added.js", "700e60a67b4a", 608], ["data/photos.js", "b2c924526771", 157], ["data/geo.js", "ac777901b032", 53153], ["data/labels.js", "1cc6ba8c4cff", 44512], ["data/tiles.js", "588847a63a65", 8847460], ["icons/apple-touch-icon.png", "c6dc8029e460", 7655], ["icons/icon-192.png", "6e296b8f6ce4", 8550], ["icons/icon-512.png", "656714bb2bbd", 23228], ["icons/icon-maskable-512.png", "ebf7c6fe2f4d", 19811], ["icons/icon.svg", "49de1d619a37", 693]];                       // [path, fingerprint, bytes]
+const VERSION = '1dcca181';
+const ASSETS = [["index.html", "56f1f4bd8a5d", 15788], ["app.css", "ea7daf63e521", 41393], ["app.js", "ba66a21dbd88", 98402], ["pwa.js", "e8a289107c5d", 4261], ["manifest.webmanifest", "8fa634652291", 705], ["vendor/leaflet.css", "be951f3a2ed0", 14165], ["vendor/leaflet.js", "db49d009c841", 147552], ["data/places.js", "9a61bbebfef3", 24028], ["data/added.js", "700e60a67b4a", 608], ["data/photos.js", "26fda6079a13", 297], ["data/geo.js", "ac777901b032", 53153], ["data/labels.js", "1cc6ba8c4cff", 44512], ["data/tiles.js", "588847a63a65", 8847460], ["icons/apple-touch-icon.png", "c6dc8029e460", 7655], ["icons/icon-192.png", "6e296b8f6ce4", 8550], ["icons/icon-512.png", "656714bb2bbd", 23228], ["icons/icon-maskable-512.png", "ebf7c6fe2f4d", 19811], ["icons/icon.svg", "49de1d619a37", 693], ["photos/pmua7iuv6n5aez.jpg", "52d7631ed8f7", 40078]];                       // [path, fingerprint, bytes]
 const CACHE = 'sg-assets';
 const SCOPE = self.registration.scope;
 const url = p => new URL(p, SCOPE).href;
