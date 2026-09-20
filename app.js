@@ -159,7 +159,7 @@
     const hasCoords = !!(p.lat && p.lng);
     return '<div class="place-card' + (p.id === selectedId ? ' selected' : '') + '" data-id="' + esc(p.id) + '" tabindex="0" role="group" aria-label="' + esc(p.name) + '">' +
       '<div class="glyph" style="background:' + c.color + ';color:' + c.ink + '">' + svgIcon(ICONS[p.cat] ? p.cat : 'other') + '</div>' +
-      '<div class="pc-body">' +
+      '<div class="pc-body">' + coverHtml(p.id, 'pc-cover', 'data-act="photos"') +
         '<div class="row1"><h3>' + esc(p.name) + '</h3><span class="cat-tag" style="background:' + c.color + ';color:' + c.ink + '">' + esc(c.label) + '</span></div>' +
         (p.zh ? '<div class="zh">' + esc(p.zh) + '</div>' : '') +
         (p.note ? '<div class="note">' + esc(p.note) + '</div>' : '') +
@@ -169,6 +169,7 @@
         (p.userAdded ? '<div class="local-tag"><b>On this phone only</b><button type="button" data-act="share">Share with everyone</button><button type="button" class="plain" data-act="remove">Delete</button></div>' : '') +
         '<div class="dir-row"><button type="button" class="dir-btn primary" data-act="dir">Directions</button>' +
           (hasCoords ? '<button type="button" class="dir-btn" data-act="map">Show on map</button>' : '') +
+          photoBtnHtml(p.id, 'data-act="photos"') +
         '</div>' +
       '</div></div>';
   }
@@ -207,6 +208,7 @@
     if (!card) return;
     const id = card.dataset.id;
     if (btn && btn.dataset.act === 'dir'){ openDirections(id); return; }
+    if (btn && btn.dataset.act === 'photos'){ openPhotos(id); return; }
     if (btn && btn.dataset.act === 'share'){ sharePlace(id); return; }
     if (btn && btn.dataset.act === 'remove'){ removeLocalPlace(id); return; }
     selectPlace(id, true);
@@ -237,7 +239,7 @@
 
   function popupHtml(p){
     const c = CATEGORIES[p.cat] || CATEGORIES.other;
-    return '<div class="pp"><div class="pp-cat"><i style="background:' + c.color + '"></i>' + esc(c.label) + '</div>' +
+    return '<div class="pp">' + coverHtml(p.id, 'pc-cover pp-cover', 'data-photos="' + esc(p.id) + '"') + '<div class="pp-cat"><i style="background:' + c.color + '"></i>' + esc(c.label) + '</div>' +
       '<div class="pp-title">' + esc(p.name) + '</div>' +
       (p.zh ? '<div class="pp-zh">' + esc(p.zh) + '</div>' : '') +
       (p.note ? '<div class="pp-note">' + esc(p.note) + '</div>' : '') +
@@ -245,6 +247,7 @@
       '<div class="pp-addr">' + esc(p.addr) + (p.approx ? ' · approximate pin' : '') + '</div>' +
       (p.flag ? '<div class="pp-flag">' + esc(p.flag) + '</div>' : '') +
       '<div class="dir-row"><button type="button" class="dir-btn primary" data-dir="' + esc(p.id) + '">Directions</button>' +
+        photoBtnHtml(p.id, 'data-photos="' + esc(p.id) + '"') +
         (p.userAdded ? '<button type="button" class="dir-btn" data-share="' + esc(p.id) + '">Share with everyone</button>' : '') + '</div></div>';
   }
 
@@ -1020,7 +1023,7 @@
     if (!window.confirm('Delete “' + p.name + '” from this phone?')) return;
     userPlaces = userPlaces.filter(x => x.id !== id);
     if (selectedId === id) selectedId = null;
-    await saveUserPlaces(); render();
+    await saveUserPlaces(); dropPhotosFor(id); render();
   }
   document.addEventListener('click', e => {
     const b = e.target.closest && e.target.closest('[data-share]');
@@ -1254,6 +1257,218 @@
     }
   }
 
+  /* ---------- Photos: taken or picked on this phone, shrunk, kept in IndexedDB ---------- */
+  const photosBySpot = {};                       // spotId -> [{ id, spot, order, at, thumb, full, thumbUrl }] (cover first)
+  let photoDb = null;
+  let photoSpot = null;                          // the spot whose photo sheet is open
+  const CAM_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5h3l1.6-2.5h6.8L17 8.5h3a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.4" r="3.6"/></svg>';
+  const PLUS_CAM_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5h3l1.6-2.5h6.8L17 8.5h3a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5a1 1 0 0 1 1-1z"/><path d="M12 10.9v5M9.5 13.4h5"/></svg>';
+
+  const photoList = id => photosBySpot[id] || [];
+  function coverHtml(id, cls, attr){
+    const l = photoList(id); if (!l.length) return '';
+    return '<button type="button" class="' + cls + '" ' + attr + ' aria-label="Photos"><img src="' + l[0].thumbUrl + '" alt="" decoding="async">' +
+      (l.length > 1 ? '<span class="pc-n">' + l.length + '</span>' : '') + '</button>';
+  }
+  function photoBtnHtml(id, attr){
+    const n = photoList(id).length;
+    return '<button type="button" class="dir-btn ph-btn' + (n ? '' : ' icon') + '" ' + attr + ' aria-label="' + (n ? n + (n > 1 ? ' photos' : ' photo') : 'Add photos') + '">' + CAM_SVG + (n ? n : '') + '</button>';
+  }
+
+  function idbDone(tx){ return new Promise((res, rej) => { tx.oncomplete = () => res(); tx.onerror = tx.onabort = () => rej(tx.error || new Error('db')); }); }
+  function openPhotoDb(){
+    return new Promise((res, rej) => {
+      if (!window.indexedDB) return rej(new Error('IndexedDB missing'));
+      const r = indexedDB.open('shanghai-guide-photos', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('photos', { keyPath:'id' });
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+  }
+  function indexPhoto(rec){
+    rec.thumbUrl = URL.createObjectURL(rec.thumb);
+    (photosBySpot[rec.spot] = photosBySpot[rec.spot] || []).push(rec);
+    photosBySpot[rec.spot].sort((x, y) => x.order - y.order);
+  }
+  async function loadPhotos(){
+    try{
+      photoDb = await openPhotoDb();
+      const all = await new Promise((res, rej) => { const q = photoDb.transaction('photos').objectStore('photos').getAll(); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+      all.forEach(indexPhoto);
+    } catch(err){ photoDb = null; console.warn('Photos unavailable', err); }
+  }
+  function dropPhotosFor(spot){
+    const l = photosBySpot[spot]; if (!l || !photoDb) return;
+    delete photosBySpot[spot];
+    const tx = photoDb.transaction('photos', 'readwrite');
+    l.forEach(r => { tx.objectStore('photos').delete(r.id); URL.revokeObjectURL(r.thumbUrl); });
+  }
+
+  // decode once, then draw a big copy (for the viewer) and a small one (for cards)
+  async function shrinkPhoto(file){
+    const url = URL.createObjectURL(file);
+    try{
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      const draw = (max, q) => {
+        const s = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.naturalWidth * s)); c.height = Math.max(1, Math.round(img.naturalHeight * s));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        return new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error('encode')), 'image/jpeg', q));
+      };
+      return { full: await draw(1600, .82), thumb: await draw(640, .8) };
+    } finally { URL.revokeObjectURL(url); }
+  }
+
+  function refreshSpot(id){
+    renderList();
+    const m = markers[id], pop = m && m.getPopup && m.getPopup();
+    if (pop && pop.isOpen()) pop.update();
+    if (photoSpot === id) renderPhotoSheet();
+  }
+
+  async function addPhotos(spot, files){
+    if (!photoDb){ toast('Photos can’t be saved in this browser.'); return; }
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+    const grid = $('ph-grid'); grid.classList.add('ph-busy');
+    let ok = 0, bad = 0;
+    for (const file of files){
+      try{
+        const v = await shrinkPhoto(file);
+        const l = photoList(spot);
+        const rec = { id:'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), spot, order:(l.length ? l[l.length - 1].order : 0) + 1, at:new Date().toISOString(), full:v.full, thumb:v.thumb };
+        const tx = photoDb.transaction('photos', 'readwrite'); tx.objectStore('photos').put(rec); await idbDone(tx);
+        indexPhoto(rec); ok++;
+      } catch(err){ bad++; console.warn('photo failed', err); }
+    }
+    grid.classList.remove('ph-busy');
+    if (bad) toast(bad === 1 && !ok ? 'Couldn’t read that photo.' : bad + ' photo' + (bad > 1 ? 's' : '') + ' couldn’t be read.');
+    refreshSpot(spot);
+  }
+  async function removePhoto(rec){
+    const tx = photoDb.transaction('photos', 'readwrite'); tx.objectStore('photos').delete(rec.id); await idbDone(tx);
+    URL.revokeObjectURL(rec.thumbUrl);
+    photosBySpot[rec.spot] = photoList(rec.spot).filter(r => r !== rec);
+    if (!photosBySpot[rec.spot].length) delete photosBySpot[rec.spot];
+    refreshSpot(rec.spot);
+  }
+  async function makeCover(rec){
+    const l = photoList(rec.spot);
+    rec.order = (l.length ? l[0].order : 0) - 1;
+    const tx = photoDb.transaction('photos', 'readwrite'); tx.objectStore('photos').put(rec); await idbDone(tx);
+    l.sort((x, y) => x.order - y.order);
+    refreshSpot(rec.spot);
+  }
+
+  /* action sheet (Take Photo / Choose from Library, Delete) */
+  const menuBack = $('ph-menu-backdrop');
+  function showMenu(items){
+    $('ph-menu-items').innerHTML = items.map((it, i) =>
+      '<button type="button" data-i="' + i + '"' + (it.destructive ? ' class="destructive"' : '') + '>' + (it.hint ? '<small>' + esc(it.hint) + '</small>' : '') + esc(it.label) + '</button>').join('');
+    menuBack._items = items;
+    menuBack.classList.add('open'); menuBack.setAttribute('aria-hidden', 'false');
+  }
+  function hideMenu(){ menuBack.classList.remove('open'); menuBack.setAttribute('aria-hidden', 'true'); }
+  menuBack.addEventListener('pointerdown', e => { if (e.target === menuBack) hideMenu(); });
+  $('ph-menu-cancel').addEventListener('click', hideMenu);
+  $('ph-menu-items').addEventListener('click', e => {
+    const b = e.target.closest('button[data-i]'); if (!b) return;
+    const it = menuBack._items[+b.dataset.i];
+    hideMenu();
+    if (it && it.run) it.run();                 // runs inside the tap, so iOS lets the file picker open
+  });
+
+  /* photo sheet: a grid of this spot's photos + "Add Photo" */
+  const photoSheet = makeSheet($('photo-backdrop'), $('photo-sheet'), () => { photoSpot = null; });
+  $('ph-close').addEventListener('click', () => photoSheet.close());
+  function openPhotos(id){
+    const p = findPlace(id); if (!p) return;
+    photoSpot = id;
+    $('ph-name').textContent = p.name; $('ph-zh').textContent = p.zh || ''; $('ph-zh').hidden = !p.zh;
+    renderPhotoSheet();
+    photoSheet.open();
+  }
+  function renderPhotoSheet(){
+    const l = photoList(photoSpot);
+    $('ph-grid').innerHTML = l.map((r, i) =>
+      '<button type="button" class="ph-tile" data-i="' + i + '" aria-label="Photo ' + (i + 1) + ' of ' + l.length + '"><img src="' + r.thumbUrl + '" alt="" decoding="async">' + (i === 0 && l.length > 1 ? '<span class="ph-cover-pill">Cover</span>' : '') + '</button>').join('') +
+      '<button type="button" class="ph-tile ph-add" data-add>' + PLUS_CAM_SVG + (l.length ? 'Add' : 'Add Photo') + '</button>';
+    $('ph-note').textContent = photoDb
+      ? (l.length ? 'Tap a photo to view it. The first photo is the cover shown on the card.' : 'Take a photo now or pick one from your library. It is saved on this phone, so it works offline too.')
+      : 'Photos can’t be saved in this browser.';
+  }
+  $('ph-grid').addEventListener('click', e => {
+    if (e.target.closest('[data-add]')){ askForPhoto(); return; }
+    const t = e.target.closest('.ph-tile[data-i]'); if (t) openViewer(+t.dataset.i);
+  });
+  function askForPhoto(){
+    if (!photoDb){ toast('Photos can’t be saved in this browser.'); return; }
+    const spot = photoSpot;
+    showMenu([
+      { label:'Take Photo', run: () => { $('ph-in-camera')._spot = spot; $('ph-in-camera').click(); } },
+      { label:'Choose from Library', run: () => { $('ph-in-library')._spot = spot; $('ph-in-library').click(); } }
+    ]);
+  }
+  ['ph-in-camera', 'ph-in-library'].forEach(id => $(id).addEventListener('change', e => {
+    const inp = e.target, files = Array.from(inp.files || []), spot = inp._spot || photoSpot;
+    inp.value = '';
+    if (files.length && spot) addPhotos(spot, files);
+  }));
+  document.addEventListener('click', e => {
+    const b = e.target.closest && e.target.closest('[data-photos]');
+    if (b) openPhotos(b.getAttribute('data-photos'));
+  });
+
+  /* full-screen viewer: swipe between photos, make cover, delete */
+  const viewer = $('ph-viewer'), vTrack = $('ph-v-track');
+  let vUrls = [], vIndex = 0;
+  function buildViewer(at){
+    vUrls.forEach(u => URL.revokeObjectURL(u));
+    const l = photoList(photoSpot);
+    vUrls = l.map(r => URL.createObjectURL(r.full));
+    vTrack.innerHTML = vUrls.map(u => '<div class="ph-v-slide"><img src="' + u + '" alt=""></div>').join('');
+    vIndex = Math.max(0, Math.min(at, l.length - 1));
+    vTrack.style.scrollBehavior = 'auto';
+    vTrack.scrollLeft = vIndex * vTrack.clientWidth;
+    vTrack.style.scrollBehavior = '';
+    syncViewer();
+  }
+  function syncViewer(){
+    const n = photoList(photoSpot).length;
+    $('ph-v-count').textContent = n > 1 ? (vIndex + 1) + ' of ' + n : '';
+    $('ph-v-cover').hidden = vIndex === 0;
+  }
+  function openViewer(i){
+    viewer.classList.add('open'); viewer.setAttribute('aria-hidden', 'false');
+    buildViewer(i);
+    $('ph-v-close').focus({ preventScroll:true });
+  }
+  function closeViewer(){
+    viewer.classList.remove('open'); viewer.setAttribute('aria-hidden', 'true');
+    vUrls.forEach(u => URL.revokeObjectURL(u)); vUrls = []; vTrack.innerHTML = '';
+  }
+  const viewerAt = () => Math.max(0, Math.min(photoList(photoSpot).length - 1, Math.round(vTrack.scrollLeft / Math.max(1, vTrack.clientWidth))));
+  vTrack.addEventListener('scroll', debounce(() => { const i = viewerAt(); if (i !== vIndex){ vIndex = i; syncViewer(); } }, 60), { passive:true });
+  $('ph-v-close').addEventListener('click', closeViewer);
+  $('ph-v-cover').addEventListener('click', async () => {
+    const rec = photoList(photoSpot)[vIndex = viewerAt()]; if (!rec) return;
+    await makeCover(rec); buildViewer(0);
+  });
+  $('ph-v-delete').addEventListener('click', () => {
+    const rec = photoList(photoSpot)[vIndex = viewerAt()]; if (!rec) return;
+    showMenu([{ label:'Delete Photo', destructive:true, hint:'This photo will be removed from this phone.', run: async () => {
+      const at = vIndex; await removePhoto(rec);
+      if (!photoList(photoSpot).length) closeViewer(); else buildViewer(at);
+    } }]);
+  });
+  window.addEventListener('keydown', e => {                       // Esc peels back one layer at a time
+    if (e.key !== 'Escape') return;
+    if (menuBack.classList.contains('open')){ hideMenu(); e.stopPropagation(); }
+    else if (viewer.classList.contains('open')){ closeViewer(); e.stopPropagation(); }
+  }, true);
+
   async function boot(){
     syncChrome();
     new ResizeObserver(syncChrome).observe(header);
@@ -1268,6 +1483,7 @@
     } catch(err){
       userPlaces = [];
     }
+    await loadPhotos();
     render();
   }
 

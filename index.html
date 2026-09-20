@@ -122,6 +122,50 @@
   </div>
 </div>
 
+<div id="photo-backdrop" class="sheet-backdrop">
+  <div id="photo-sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="ph-name" tabindex="-1">
+    <div class="sheet-head">
+      <div class="sheet-grabber"></div>
+      <div class="dir-title-row">
+        <div class="dir-titles">
+          <h2 id="ph-name"></h2>
+          <div class="zhname" id="ph-zh"></div>
+        </div>
+        <button type="button" class="nav-btn bold" id="ph-close">Done</button>
+      </div>
+    </div>
+    <div class="sheet-body">
+      <div class="ph-grid" id="ph-grid"></div>
+      <p class="sub ph-note" id="ph-note"></p>
+    </div>
+  </div>
+</div>
+
+<div id="ph-viewer" class="ph-viewer" role="dialog" aria-modal="true" aria-label="Photo viewer" aria-hidden="true">
+  <div class="ph-v-top">
+    <button type="button" class="ph-v-btn" id="ph-v-close">Done</button>
+    <span class="ph-v-count" id="ph-v-count"></span>
+    <span class="ph-v-spacer"></span>
+  </div>
+  <div class="ph-v-track" id="ph-v-track"></div>
+  <div class="ph-v-bottom">
+    <button type="button" class="ph-v-btn" id="ph-v-cover">Make cover</button>
+    <button type="button" class="ph-v-btn danger" id="ph-v-delete" aria-label="Delete photo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l.8 12.5h9.4L17.5 7M10 11v5.5M14 11v5.5"/></svg>
+    </button>
+  </div>
+</div>
+
+<div id="ph-menu-backdrop" class="ph-menu-backdrop" aria-hidden="true">
+  <div class="ph-menu" role="dialog" aria-modal="true" id="ph-menu">
+    <div class="ph-menu-group" id="ph-menu-items"></div>
+    <button type="button" class="ph-menu-cancel" id="ph-menu-cancel">Cancel</button>
+  </div>
+</div>
+
+<input type="file" id="ph-in-camera" accept="image/*" capture="environment" hidden>
+<input type="file" id="ph-in-library" accept="image/*" multiple hidden>
+
 <div id="add-sheet-backdrop" class="sheet-backdrop">
   <div id="add-sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="add-title" tabindex="-1">
     <div class="sheet-head">
