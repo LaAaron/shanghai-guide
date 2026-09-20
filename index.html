@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<title>上海攻略 · Shanghai Guide</title>
+<meta name="description" content="Offline map and food guide for Shanghai.">
+<meta name="robots" content="noindex, nofollow">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#F8F6F2">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Shanghai Guide">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app">
+  <header id="hdr" class="mat">
+    <div class="title-row">
+      <h1>上海攻略<span>Shanghai Guide</span></h1>
+      <div class="title-right">
+        <div class="count-pill"><span id="visible-count">0</span> spots</div>
+        <button type="button" class="offline-btn" id="offline-btn" data-state="checking" aria-label="Offline status">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 18h9.2a4.3 4.3 0 0 0 .7-8.55A6 6 0 0 0 5.9 10.6 3.7 3.7 0 0 0 7.5 18z"/><path class="tick" d="M9.3 13.6l2.1 2.1 3.6-3.9"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="search-row">
+      <div class="search-field">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M13 13l4 4"/></svg>
+        <input id="search" type="search" placeholder="Search spots, streets, dishes" aria-label="Search places" enterkeyhint="search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      </div>
+      <button type="button" class="icon-btn" id="add-btn" aria-label="Add a find" title="Add a find">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>
+      </button>
+    </div>
+    <div class="chip-row" id="category-chips" role="group" aria-label="Filter by category"></div>
+  </header>
+
+  <main id="main" class="show-list">
+    <div id="list-pane"></div>
+    <div id="map-pane">
+      <div id="map"></div>
+      <details class="map-legend" id="map-legend"><summary>Map key</summary>
+        <div><span class="lg" style="background:#FDE293;border:1px solid #F2BF4C"></span>Highway / expressway</div>
+        <div><span class="lg" style="background:#fff;border:1px solid #bbb"></span>Main road</div>
+        <div><span class="lg" style="background:#fff;border:1px solid #d6d6d6;height:5px"></span>Smaller street</div>
+        <div><span class="lg" style="background:#CDEACD"></span>Park / green space</div>
+        <div><span class="lg" style="background:#E4E0DA;border:1px solid #D5D0C9"></span>Buildings (zoom in)</div>
+        <div><span class="lg" style="background:#AADAFF"></span>Water</div>
+        <div><span class="lg-t">Aa</span>Road names (zoom in)</div>
+        <div><span class="lg-t" style="color:#2f7a4a">Aa</span>Parks &amp; areas (zoom in)</div>
+        <div><span class="metro-dot" style="display:inline-block;width:14px;height:14px;line-height:14px;font-size:9px;margin:0 10px 0 2px;vertical-align:middle">M</span>Metro station</div>
+      </details>
+      <button type="button" class="map-fab" id="fit-btn" aria-label="Show all spots" title="Show all spots">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4"/></svg>
+      </button>
+      <div class="map-credit">© OpenStreetMap contributors · Overture Maps (ODbL) · streets &amp; stations within ~10 km of your spots</div>
+    </div>
+  </main>
+
+  <nav class="tabbar mat" id="tabbar" aria-label="View">
+    <button type="button" class="tab active" id="tab-list" aria-current="page">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M9 6.5h11M9 12h11M9 17.5h11"/><circle cx="4.5" cy="6.5" r=".9" fill="currentColor"/><circle cx="4.5" cy="12" r=".9" fill="currentColor"/><circle cx="4.5" cy="17.5" r=".9" fill="currentColor"/></svg>
+      List
+    </button>
+    <button type="button" class="tab" id="tab-map">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4L3.5 6v14L9 18l6 2 5.5-2V4L15 6z"/><path d="M9 4v14M15 6v14"/></svg>
+      Map
+    </button>
+  </nav>
+</div>
+
+<div id="dir-backdrop" class="sheet-backdrop">
+  <div id="dir-sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="dir-name" tabindex="-1">
+    <div class="sheet-head">
+      <div class="sheet-grabber"></div>
+      <div class="dir-title-row">
+        <div class="dir-titles">
+          <h2 id="dir-name"></h2>
+          <div class="zhname" id="dir-zh"></div>
+        </div>
+        <button type="button" class="nav-btn bold" id="dir-close">Done</button>
+      </div>
+    </div>
+    <div class="sheet-body">
+      <div class="dir-note" id="dir-addr"></div>
+      <div class="group-label">Starting from</div>
+      <div class="form-group">
+        <div class="field"><select id="dir-from" aria-label="Starting from"></select></div>
+        <div class="field" id="dir-from-wrap" hidden><input id="dir-from-text" type="text" placeholder="Type an address or hotel name" aria-label="Starting address" autocomplete="off"></div>
+      </div>
+      <div class="group-label">Travel by</div>
+      <div class="seg" id="dir-mode" role="group" aria-label="Travel mode">
+        <button type="button" data-m="walk" class="on">Walk</button>
+        <button type="button" data-m="transit">Metro/bus</button>
+        <button type="button" data-m="drive">Car/taxi</button>
+        <button type="button" data-m="bike">Bike</button>
+      </div>
+      <div class="group-label">Open in</div>
+      <div class="app-links">
+        <a id="lnk-amap" target="_blank" rel="noopener"><span class="lbl">高德 AMap · directions</span></a>
+        <a id="lnk-amap-search" target="_blank" rel="noopener"><span>高德 AMap · search by name</span></a>
+        <a id="lnk-apple" target="_blank" rel="noopener"><span>Apple Maps · directions</span></a>
+        <a id="lnk-google" target="_blank" rel="noopener"><span>Google Maps · directions <small style="opacity:.6">(needs VPN in China)</small></span></a>
+      </div>
+      <div class="dir-note warn" id="dir-warn"></div>
+    </div>
+  </div>
+</div>
+
+<div id="add-sheet-backdrop" class="sheet-backdrop">
+  <div id="add-sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="add-title" tabindex="-1">
+    <div class="sheet-head">
+      <div class="sheet-grabber"></div>
+      <div class="sheet-nav">
+        <button type="button" class="nav-btn" id="cancel-add">Cancel</button>
+        <h2 id="add-title">Add a find</h2>
+        <button type="submit" class="nav-btn bold" form="add-form">Save</button>
+      </div>
+    </div>
+    <div class="sheet-body">
+      <p class="sub">Saved on this device. Add coordinates to pin it on the map, or just log it for later.</p>
+      <form id="add-form">
+        <div class="form-group">
+          <div class="field">
+            <label for="f-name">Name (English)</label>
+            <input id="f-name" type="text" required placeholder="e.g. Din Tai Fung" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="f-zh">Name (Chinese, optional)</label>
+            <input id="f-zh" type="text" placeholder="鼎泰丰" autocomplete="off">
+          </div>
+        </div>
+        <div class="form-group">
+          <div class="field-row">
+            <div class="field">
+              <label for="f-cat">Category</label>
+              <select id="f-cat"></select>
+            </div>
+            <div class="field">
+              <label for="f-district">District</label>
+              <input id="f-district" type="text" placeholder="e.g. Huangpu" autocomplete="off">
+            </div>
+          </div>
+          <div class="field">
+            <label for="f-addr">Address</label>
+            <textarea id="f-addr" rows="2" placeholder="Street, number, nearest metro exit…"></textarea>
+          </div>
+          <div class="field">
+            <label for="f-note">Why you want to go</label>
+            <input id="f-note" type="text" placeholder="e.g. crab roe noodles, Michelin bib gourmand" autocomplete="off">
+          </div>
+        </div>
+        <div class="form-group">
+          <div class="field-row">
+            <div class="field">
+              <label for="f-lat">Latitude (optional)</label>
+              <input id="f-lat" type="text" inputmode="decimal" placeholder="31.2304" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="f-lng">Longitude (optional)</label>
+              <input id="f-lng" type="text" inputmode="decimal" placeholder="121.4737" autocomplete="off">
+            </div>
+          </div>
+        </div>
+        <div class="hint">No coordinates? It still appears in your list, just without a map pin.</div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite">
+  <span class="toast-msg" id="toast-msg"></span>
+  <button type="button" class="toast-btn" id="toast-btn" hidden></button>
+  <button type="button" class="toast-x" id="toast-x" aria-label="Dismiss">&times;</button>
+</div>
+
+<script src="vendor/leaflet.js"></script>
+<script src="data/places.js"></script>
+<script src="data/geo.js"></script>
+<script src="data/labels.js"></script>
+<script src="data/tiles.js"></script>
+<script src="app.js"></script>
+<script src="pwa.js"></script>
+</body>
+</html>
