@@ -26,6 +26,7 @@
     skewers:   '<path d="M4 20L20 4"/><circle cx="9" cy="15" r="2"/><circle cx="12.5" cy="11.5" r="2"/><circle cx="16" cy="8" r="2"/>',
     shopping:  '<path d="M5.5 8h13l1 12.5h-15z"/><path d="M9 8a3 3 0 0 1 6 0"/>',
     sights:    '<path d="M3.5 9.5L12 4l8.5 5.5z"/><path d="M6 12v6M10 12v6M14 12v6M18 12v6M3.5 20.5h17"/>',
+    stay:      '<path d="M3.5 18.5V6.5"/><path d="M3.5 14h17v4.5"/><path d="M20.5 14v-2a3 3 0 0 0-3-3h-6.5v5"/><circle cx="7.2" cy="10.6" r="1.7"/>',
     other:     '<path d="M12 3.5l2.5 5.3 5.8.8-4.2 4.1 1 5.8L12 16.7l-5.1 2.8 1-5.8-4.2-4.1 5.8-.8z"/>'
   };
   const svgIcon = name => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[name] + '</svg>';

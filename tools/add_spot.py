@@ -66,7 +66,7 @@ if lat is not None:
     if not (30.4 <= lat <= 32.0 and 120.6 <= lng <= 122.4): emit('rejected', 'Those coordinates are outside the Shanghai area this guide covers.')
     lat, lng = round(float(lat), 6), round(float(lng), 6)
 spot['lat'], spot['lng'] = lat, lng
-spot['approx'] = False
+spot['approx'] = raw.get('approx') is True            # only a real boolean; anything else means "exact"
 spot['by'] = re.sub(r'[^A-Za-z0-9-]', '', user)
 spot['at'] = datetime.date.today().isoformat()
 
