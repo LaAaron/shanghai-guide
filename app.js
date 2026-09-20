@@ -1,5 +1,7 @@
 (function(){
   const { CATEGORIES, SEED_PLACES, METRO_STATIONS, MAP_TILES, SH_DISTRICTS, ROAD_NAMES, ROAD_POLYS, AREAS } = window.SG;
+  const ADDED_PLACES = window.SG.ADDED_PLACES || [];      // spots added through the app and approved (data/added.js)
+  const SHARE_REPO = 'LaAaron/shanghai-guide';
   let userPlaces = [];
   let activeCat = "all";
   let activeDistrict = "all";
@@ -49,7 +51,9 @@
     s.setProperty('--tab-h', tabH + 'px');
   }
 
-  function allPlaces(){ return SEED_PLACES.concat(userPlaces); }
+  const sharedIds = new Set(ADDED_PLACES.map(p => p.id));
+  // built-in spots + spots shared by anyone in the group + spots saved only on this phone (until they arrive as shared)
+  function allPlaces(){ return SEED_PLACES.concat(ADDED_PLACES, userPlaces.filter(p => !sharedIds.has(p.id))); }
   function districts(){ return Array.from(new Set(allPlaces().map(p => p.district))).sort(); }
   function findPlace(id){ return allPlaces().find(x => x.id === id); }
 
@@ -151,6 +155,7 @@
         (p.note ? '<div class="note">' + esc(p.note) + '</div>' : '') +
         '<div class="addr">' + esc(p.addr) + (p.approx ? ' · approximate pin' : '') + '</div>' +
         (p.flag ? '<div class="flag">' + WARN_SVG + '<span>' + esc(p.flag) + '</span></div>' : '') +
+        (p.userAdded ? '<div class="local-tag"><b>On this phone only</b><button type="button" data-act="share">Share with everyone</button><button type="button" class="plain" data-act="remove">Delete</button></div>' : '') +
         '<div class="dir-row"><button type="button" class="dir-btn primary" data-act="dir">Directions</button>' +
           (hasCoords ? '<button type="button" class="dir-btn" data-act="map">Show on map</button>' : '') +
         '</div>' +
@@ -182,6 +187,8 @@
     if (!card) return;
     const id = card.dataset.id;
     if (btn && btn.dataset.act === 'dir'){ openDirections(id); return; }
+    if (btn && btn.dataset.act === 'share'){ sharePlace(id); return; }
+    if (btn && btn.dataset.act === 'remove'){ removeLocalPlace(id); return; }
     selectPlace(id, true);
   });
   listPane.addEventListener('keydown', e => {
@@ -216,7 +223,8 @@
       (p.note ? '<div class="pp-note">' + esc(p.note) + '</div>' : '') +
       '<div class="pp-addr">' + esc(p.addr) + (p.approx ? ' · approximate pin' : '') + '</div>' +
       (p.flag ? '<div class="pp-flag">' + esc(p.flag) + '</div>' : '') +
-      '<div class="dir-row"><button type="button" class="dir-btn primary" data-dir="' + esc(p.id) + '">Directions</button></div></div>';
+      '<div class="dir-row"><button type="button" class="dir-btn primary" data-dir="' + esc(p.id) + '">Directions</button>' +
+        (p.userAdded ? '<button type="button" class="dir-btn" data-share="' + esc(p.id) + '">Share with everyone</button>' : '') + '</div></div>';
   }
 
   function renderMap(){
@@ -689,6 +697,7 @@
     map.on('zoomend', zoomStyle); zoomStyle();
     map.setMaxBounds(geo.getBounds().pad(0.2));
     $('fit-btn').addEventListener('click', fitVisible);
+    map.on('click', e => { if (picking){ setLoc(e.latlng.lat, e.latlng.lng, 'picked on map'); endPick(true); } });
     $('map-legend').open = !isMobile();
     new ResizeObserver(() => map.invalidateSize()).observe($('map-pane'));
   }
@@ -697,7 +706,7 @@
   const wideMq = window.matchMedia('(min-width: 600px)');
   function rubber(over, dim){ const c = .55; return (over * dim * c) / (dim + c * Math.abs(over)); }
 
-  function makeSheet(backdrop, sheet){
+  function makeSheet(backdrop, sheet, onClosed){
     const head = sheet.querySelector('.sheet-head');
     let lastFocus = null, drag = null;
 
@@ -714,6 +723,7 @@
       backdrop.classList.remove('open');
       appEl.inert = false;
       if (lastFocus && lastFocus.focus) lastFocus.focus({ preventScroll:true });
+      if (onClosed) onClosed();
     }
 
     backdrop.addEventListener('pointerdown', e => { if (e.target === backdrop) close(); });
@@ -849,7 +859,9 @@
   }
 
   /* ---------- Add-a-find sheet ---------- */
-  const addSheet = makeSheet($('add-sheet-backdrop'), $('add-sheet'));
+  let picking = false, pickMarker = null;
+  function clearPickMarker(){ if (pickMarker && map){ map.removeLayer(pickMarker); } pickMarker = null; }
+  const addSheet = makeSheet($('add-sheet-backdrop'), $('add-sheet'), () => { if (!picking) clearPickMarker(); });
   const addForm = $('add-form');
   const catSelect = $('f-cat');
 
@@ -861,7 +873,86 @@
   });
 
   $('add-btn').addEventListener('click', () => addSheet.open());
-  $('cancel-add').addEventListener('click', () => addSheet.close());
+  $('cancel-add').addEventListener('click', () => { addSheet.close(); });
+
+  // ---- location: GPS (converted to the map's coordinate system), tap on the map, or typed
+  // China's maps are drawn in GCJ-02, a deliberately shifted system. A phone's GPS reports plain WGS-84, so it must be
+  // converted or the pin lands ~500 m away from where you stood. (Same formula used to line up the road names.)
+  function outOfChina(lat, lng){ return lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271; }
+  function tLat(x, y){ let r = -100 + 2*x + 3*y + .2*y*y + .1*x*y + .2*Math.sqrt(Math.abs(x)); r += (20*Math.sin(6*x*Math.PI) + 20*Math.sin(2*x*Math.PI))*2/3; r += (20*Math.sin(y*Math.PI) + 40*Math.sin(y/3*Math.PI))*2/3; r += (160*Math.sin(y/12*Math.PI) + 320*Math.sin(y*Math.PI/30))*2/3; return r; }
+  function tLng(x, y){ let r = 300 + x + 2*y + .1*x*x + .1*x*y + .1*Math.sqrt(Math.abs(x)); r += (20*Math.sin(6*x*Math.PI) + 20*Math.sin(2*x*Math.PI))*2/3; r += (20*Math.sin(x*Math.PI) + 40*Math.sin(x/3*Math.PI))*2/3; r += (150*Math.sin(x/12*Math.PI) + 300*Math.sin(x*Math.PI/30))*2/3; return r; }
+  function wgs2gcj(lat, lng){
+    if (outOfChina(lat, lng)) return [lat, lng];
+    const a = 6378245.0, ee = 0.00669342162296594323;
+    let dLat = tLat(lng - 105, lat - 35), dLng = tLng(lng - 105, lat - 35);
+    const rad = lat / 180 * Math.PI; let m = Math.sin(rad); m = 1 - ee * m * m; const sm = Math.sqrt(m);
+    dLat = (dLat * 180) / ((a * (1 - ee)) / (m * sm) * Math.PI);
+    dLng = (dLng * 180) / (a / sm * Math.cos(rad) * Math.PI);
+    return [lat + dLat, lng + dLng];
+  }
+  const locReadout = $('loc-readout');
+  function showLoc(msg, cls){ locReadout.textContent = msg; locReadout.className = 'loc-readout' + (cls ? ' ' + cls : ''); }
+  function setLoc(lat, lng, source){
+    $('f-lat').value = lat.toFixed(6); $('f-lng').value = lng.toFixed(6);
+    showLoc(lat.toFixed(5) + ', ' + lng.toFixed(5) + ' · ' + source, 'ok');
+    clearPickMarker();
+    if (map) pickMarker = L.marker([lat, lng], { icon: pinIcon(catSelect.value, true), keyboard:false, interactive:false, zIndexOffset:2000 }).addTo(map);
+  }
+  function resetLoc(){ showLoc('No location yet'); clearPickMarker(); }
+  function syncTyped(){
+    const lat = parseFloat($('f-lat').value), lng = parseFloat($('f-lng').value);
+    if (isFinite(lat) && isFinite(lng)) showLoc(lat.toFixed(5) + ', ' + lng.toFixed(5) + ' · typed', 'ok'); else showLoc('No location yet');
+  }
+  $('f-lat').addEventListener('input', syncTyped); $('f-lng').addEventListener('input', syncTyped);
+
+  $('loc-gps').addEventListener('click', () => {
+    if (!navigator.geolocation){ showLoc('This device can’t share its location. Pick on the map instead.', 'err'); return; }
+    showLoc('Finding you…');
+    navigator.geolocation.getCurrentPosition(pos => {
+      const g = wgs2gcj(pos.coords.latitude, pos.coords.longitude);
+      setLoc(g[0], g[1], 'my location (±' + Math.round(pos.coords.accuracy) + ' m)');
+      if (map) map.setView(g, Math.max(map.getZoom(), 16), { animate:false });
+    }, err => {
+      showLoc(err && err.code === 1 ? 'Location is switched off for this app. Turn it on in Settings, or pick on the map.' : 'Couldn’t get your location. Try again, or pick on the map.', 'err');
+    }, { enableHighAccuracy:true, timeout:15000, maximumAge:30000 });
+  });
+
+  function startPick(){
+    if (!map) { showLoc('The map isn’t available right now.', 'err'); return; }
+    picking = true; addSheet.close();
+    if (isMobile()) switchTab('map');
+    $('pickbar').hidden = false; $('map').classList.add('picking');
+  }
+  function endPick(reopen){
+    picking = false; $('pickbar').hidden = true; $('map').classList.remove('picking');
+    if (reopen) addSheet.open();
+  }
+  $('loc-pick').addEventListener('click', startPick);
+  $('pick-cancel').addEventListener('click', () => endPick(true));
+
+  // ---- sharing: opens a pre-filled GitHub issue; a GitHub job checks who sent it and adds it for everyone
+  function shareUrl(p){
+    const payload = { id:p.id, name:p.name, zh:p.zh || '', cat:p.cat, district:p.district || '', addr:p.addr || '', note:p.note || '', lat:p.lat, lng:p.lng };
+    const body = 'Tap **Submit new issue** to add this spot to the shared guide.\n\n```json\n' + JSON.stringify(payload, null, 1) + '\n```\n';
+    return 'https://github.com/' + SHARE_REPO + '/issues/new?title=' + encodeURIComponent('[new-spot] ' + p.name) + '&body=' + encodeURIComponent(body);
+  }
+  function sharePlace(id){
+    const p = userPlaces.find(x => x.id === id); if (!p) return;
+    const a = document.createElement('a'); a.href = shareUrl(p); a.target = '_blank'; a.rel = 'noopener';
+    document.body.appendChild(a); a.click(); a.remove();
+    if (window.sgToast) window.sgToast('On GitHub, tap “Submit new issue”. It will appear for everyone within a minute or two.', { ms:7000 });
+  }
+  async function removeLocalPlace(id){
+    const p = userPlaces.find(x => x.id === id); if (!p) return;
+    if (!window.confirm('Delete “' + p.name + '” from this phone?')) return;
+    userPlaces = userPlaces.filter(x => x.id !== id);
+    if (selectedId === id) selectedId = null;
+    await saveUserPlaces(); render();
+  }
+  document.addEventListener('click', e => {
+    const b = e.target.closest && e.target.closest('[data-share]');
+    if (b) sharePlace(b.getAttribute('data-share'));
+  });
 
   addForm.addEventListener('submit', async e => {
     e.preventDefault();
@@ -870,7 +961,7 @@
     const lat = parseFloat($('f-lat').value);
     const lng = parseFloat($('f-lng').value);
     const place = {
-      id: 'user-' + Date.now(),
+      id: 'u-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8),
       name: name,
       zh: $('f-zh').value.trim(),
       cat: catSelect.value,
@@ -884,9 +975,10 @@
     };
     userPlaces.push(place);
     await saveUserPlaces();
-    addForm.reset();
+    addForm.reset(); resetLoc();
     addSheet.close();
     render();
+    if (window.sgToast) window.sgToast('Saved on this phone.', { action:'Share', ms:9000, onAction: () => sharePlace(place.id) });
   });
 
   const STORAGE_KEY = 'shanghai-eats-user-places';
@@ -921,6 +1013,9 @@
     try{
       const raw = localStorage.getItem(STORAGE_KEY);
       userPlaces = raw ? JSON.parse(raw) : [];
+      const before = userPlaces.length;
+      userPlaces = userPlaces.filter(p => !sharedIds.has(p.id));          // they have arrived as shared spots: drop the local copy
+      if (userPlaces.length !== before) localStorage.setItem(STORAGE_KEY, JSON.stringify(userPlaces));
     } catch(err){
       userPlaces = [];
     }

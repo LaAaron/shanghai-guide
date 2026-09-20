@@ -42,6 +42,8 @@
     else showToast(label());
   });
 
+  window.sgToast = showToast;                                          // used by app.js (e.g. "Saved on this phone. Share")
+
   if (!('serviceWorker' in navigator) || !window.caches) { setState('unsupported'); return; }
 
   navigator.serviceWorker.addEventListener('message', function (e) {

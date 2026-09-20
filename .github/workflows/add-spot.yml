@@ -1,0 +1,60 @@
+name: Add a shared spot
+
+# When someone on the allow-list submits a "[new-spot]" issue from the app, validate it, add it to
+# data/added.js, publish, then reply on the issue and close it.
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+  pages: write
+
+concurrency:
+  group: add-spot
+  cancel-in-progress: false
+
+jobs:
+  add:
+    if: startsWith(github.event.issue.title, '[new-spot]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate and add the spot
+        id: add
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_USER: ${{ github.event.issue.user.login }}
+        run: python3 tools/add_spot.py
+
+      - name: Refresh fingerprints, commit and publish
+        if: steps.add.outputs.result == 'added'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SPOT_NAME: ${{ steps.add.outputs.name }}
+          NUMBER: ${{ github.event.issue.number }}
+        run: |
+          python3 tools/stamp.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Add spot: $SPOT_NAME (issue #$NUMBER)"
+          git push
+          gh api -X POST "repos/$GITHUB_REPOSITORY/pages/builds" || true
+
+      - name: Reply and close the issue
+        if: always() && steps.add.outputs.result != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ steps.add.outputs.result }}
+          MESSAGE: ${{ steps.add.outputs.message }}
+          NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body "$MESSAGE"
+          if [ "$RESULT" = "added" ] || [ "$RESULT" = "duplicate" ]; then
+            gh issue close "$NUMBER" --repo "$GITHUB_REPOSITORY" --reason completed
+          else
+            gh issue close "$NUMBER" --repo "$GITHUB_REPOSITORY" --reason "not planned"
+          fi

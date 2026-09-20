@@ -60,6 +60,7 @@
       <button type="button" class="map-fab" id="fit-btn" aria-label="Show all spots" title="Show all spots">
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4"/></svg>
       </button>
+      <div class="pickbar" id="pickbar" hidden><span>Tap the map to place the pin</span><button type="button" id="pick-cancel">Cancel</button></div>
       <div class="map-credit">© OpenStreetMap contributors · Overture Maps (ODbL) · streets &amp; stations within ~10 km of your spots</div>
     </div>
   </main>
@@ -125,7 +126,7 @@
       </div>
     </div>
     <div class="sheet-body">
-      <p class="sub">Saved on this device. Add coordinates to pin it on the map, or just log it for later.</p>
+      <p class="sub">Saved on this phone first. Afterwards, tap <b>Share</b> to add it to the guide on everyone's phone.</p>
       <form id="add-form">
         <div class="form-group">
           <div class="field">
@@ -157,19 +158,30 @@
             <input id="f-note" type="text" placeholder="e.g. crab roe noodles, Michelin bib gourmand" autocomplete="off">
           </div>
         </div>
-        <div class="form-group">
-          <div class="field-row">
-            <div class="field">
-              <label for="f-lat">Latitude (optional)</label>
-              <input id="f-lat" type="text" inputmode="decimal" placeholder="31.2304" autocomplete="off">
+        <div class="form-group" id="loc-group">
+          <div class="field">
+            <label>Location</label>
+            <div class="loc-actions">
+              <button type="button" class="dir-btn primary" id="loc-gps">Use my location</button>
+              <button type="button" class="dir-btn" id="loc-pick">Pick on map</button>
             </div>
-            <div class="field">
-              <label for="f-lng">Longitude (optional)</label>
-              <input id="f-lng" type="text" inputmode="decimal" placeholder="121.4737" autocomplete="off">
-            </div>
+            <div class="loc-readout" id="loc-readout" aria-live="polite">No location yet</div>
           </div>
+          <details class="field loc-manual">
+            <summary>Type coordinates instead</summary>
+            <div class="field-row">
+              <div class="field">
+                <label for="f-lat">Latitude</label>
+                <input id="f-lat" type="text" inputmode="decimal" placeholder="31.2304" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="f-lng">Longitude</label>
+                <input id="f-lng" type="text" inputmode="decimal" placeholder="121.4737" autocomplete="off">
+              </div>
+            </div>
+          </details>
         </div>
-        <div class="hint">No coordinates? It still appears in your list, just without a map pin.</div>
+        <div class="hint">No location? It still appears in your list, just without a map pin.</div>
       </form>
     </div>
   </div>
@@ -183,6 +195,7 @@
 
 <script src="vendor/leaflet.js"></script>
 <script src="data/places.js"></script>
+<script src="data/added.js"></script>
 <script src="data/geo.js"></script>
 <script src="data/labels.js"></script>
 <script src="data/tiles.js"></script>

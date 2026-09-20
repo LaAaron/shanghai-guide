@@ -18,4 +18,9 @@ An offline-first map and food guide. Static files only — no server, no build s
 - `sw.js` — service worker: saves every file on the phone and updates only the files that changed
 - `tools/stamp.py` — run `python3 tools/stamp.py` after editing any file, then push. It refreshes `sw.js` so phones know what changed.
 
+## Adding spots (for the two of us)
+Tap **+** in the app, fill it in, and set the location with **Use my location** or **Pick on map**. The spot is saved on your phone at once (it works offline). Then tap **Share** and, on the GitHub page that opens, tap **Submit new issue**. A GitHub job (`.github/workflows/add-spot.yml`) checks the sender against `tools/allowed-users.txt`, validates the spot, adds it to `data/added.js`, publishes, and closes the issue. Everyone's app gets it through the "Update ready" banner.
+
+To let someone else add spots, add their GitHub username to `tools/allowed-users.txt`.
+
 Map data © OpenStreetMap contributors and Overture Maps (ODbL).
