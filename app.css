@@ -682,3 +682,43 @@
   .ph-v-slide{ flex:0 0 100%; scroll-snap-align:center; scroll-snap-stop:always; display:grid; place-items:center; padding:0 6px; min-width:0; }
   .ph-v-slide img{ max-width:100%; max-height:100%; object-fit:contain; border-radius:6px; }
   @media (prefers-reduced-motion: reduce){ .ph-menu{ transition:opacity .2s; transform:none; opacity:0; } .ph-menu-backdrop.open .ph-menu{ opacity:1; } }
+
+  /* ============ Sync ============ */
+  .sync-btn{ position:relative; }
+  .sync-btn svg{ width:18px; height:18px; }
+  .sync-btn[data-state~="ok"]{ background:#BFEBCB; color:#2A7444; }
+  .sync-btn[data-state~="busy"] svg{ animation:syncspin 1.1s linear infinite; }
+  .sync-btn[data-state~="pending"]{ background:var(--accent-soft); color:var(--accent-ink); }
+  .sync-btn[data-state~="error"]{ background:#FFD9D2; color:#B23A2E; }
+  .sync-btn[data-state~="off"]{ color:var(--label-2); }
+  .sync-btn[data-state~="off"][data-state~="pending"]::before{
+    content:""; position:absolute; top:-1px; right:-1px; width:10px; height:10px; border-radius:50%; background:#F0883E; box-shadow:0 0 0 2px var(--bg);
+  }
+  @keyframes syncspin{ to{ transform:rotate(360deg); } }
+  .sync-status{ display:grid; gap:2px; margin:4px 0 8px; padding:12px 14px; border-radius:12px; background:var(--row); }
+  .sync-status b{ font-size:17px; font-weight:600; letter-spacing:-.011em; }
+  .sync-status span{ font-size:13.5px; line-height:1.45; color:var(--label-2); }
+  .sync-status[data-state="ok"] b{ color:#2A7444; }
+  .sync-status[data-state="error"] b{ color:#B23A2E; }
+  .field input.secret{ -webkit-text-security:disc; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:15px; }
+  .sync-msg{ min-height:20px; margin:-6px 4px 10px; font-size:13.5px; line-height:1.4; color:var(--label-2); }
+  .sync-actions{ display:flex; gap:10px; }
+  .sync-actions .dir-btn{ flex:1; }
+  .dir-btn.big{ height:44px; border-radius:22px; font-size:16px; }
+  .sync-hint{ margin:16px 4px 0; }
+  .sync-remove{ display:block; margin:14px auto 0; padding:10px 14px; border:0; background:none; color:#C0473E; font-size:15px; }
+  .sync-remove:active{ opacity:.5; }
+  .sync-remove[hidden], .sync-actions [hidden]{ display:none; }
+  .local-tag .lt-why{ flex:1 1 100%; font-size:12.5px; color:var(--label-2); }
+  .local-tag.warn{ background:var(--warn-bg); color:var(--warn-ink); }
+  .local-tag.warn button{ background:rgba(138,83,0,.12); color:var(--warn-ink); }
+  .local-tag.warn button.plain{ background:transparent; }
+  @media (prefers-reduced-motion: reduce){ .sync-btn[data-state~="busy"] svg{ animation:none; } }
+
+  /* the header holds a title, a count and two round buttons: tighten it on narrow phones */
+  .title-row h1 span{ white-space:nowrap; }
+  @media (max-width:400px){
+    .title-row h1 span{ font-size:13px; margin-left:6px; }
+    .title-right{ gap:8px; }
+    .count-pill{ font-size:12px; }
+  }

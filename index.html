@@ -25,6 +25,9 @@
       <h1>上海攻略<span>Shanghai Guide</span></h1>
       <div class="title-right">
         <div class="count-pill"><span id="visible-count">0</span> spots</div>
+        <button type="button" class="offline-btn sync-btn" id="sync-btn" data-state="off" aria-label="Sync">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19.5 12a7.5 7.5 0 0 0-12.9-5.2L4.5 9"/><path d="M4.5 4.5V9h4.5"/><path d="M4.5 12a7.5 7.5 0 0 0 12.9 5.2l2.1-2.2"/><path d="M19.5 19.5V15H15"/></svg>
+        </button>
         <button type="button" class="offline-btn" id="offline-btn" data-state="checking" aria-label="Offline status">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 18h9.2a4.3 4.3 0 0 0 .7-8.55A6 6 0 0 0 5.9 10.6 3.7 3.7 0 0 0 7.5 18z"/><path class="tick" d="M9.3 13.6l2.1 2.1 3.6-3.9"/></svg>
         </button>
@@ -118,6 +121,40 @@
         <a id="lnk-google" target="_blank" rel="noopener"><span>Google Maps · directions <small style="opacity:.6">(needs VPN in China)</small></span></a>
       </div>
       <div class="dir-note warn" id="dir-warn"></div>
+    </div>
+  </div>
+</div>
+
+<div id="sync-backdrop" class="sheet-backdrop">
+  <div id="sync-sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="sync-title" tabindex="-1">
+    <div class="sheet-head">
+      <div class="sheet-grabber"></div>
+      <div class="sheet-nav">
+        <span></span>
+        <h2 id="sync-title">Sync</h2>
+        <button type="button" class="nav-btn bold" id="sync-close">Done</button>
+      </div>
+    </div>
+    <div class="sheet-body">
+      <div class="sync-status" id="sync-status" data-state="off"><b id="sync-st-title"></b><span id="sync-st-detail"></span></div>
+      <div class="group-label">Sync key</div>
+      <div class="form-group">
+        <div class="field">
+          <label for="sync-key">Key (starts with github_pat_)</label>
+          <input id="sync-key" class="secret" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="github_pat_…" enterkeyhint="done">
+        </div>
+        <div class="field">
+          <label for="sync-name">Your name (shown as who added it)</label>
+          <input id="sync-name" type="text" maxlength="20" autocomplete="off" placeholder="e.g. Aaron">
+        </div>
+      </div>
+      <p class="sync-msg" id="sync-msg" role="status" aria-live="polite"></p>
+      <div class="sync-actions">
+        <button type="button" class="dir-btn primary big" id="sync-save">Save</button>
+        <button type="button" class="dir-btn big" id="sync-now" hidden>Sync now</button>
+      </div>
+      <p class="hint sync-hint">The key only lets this app send spots and photos to the guide. Keep it private; if it ever leaks, delete it on GitHub and make a new one.</p>
+      <button type="button" class="sync-remove" id="sync-remove" hidden>Remove key from this phone</button>
     </div>
   </div>
 </div>
@@ -247,6 +284,7 @@
 <script src="vendor/leaflet.js"></script>
 <script src="data/places.js"></script>
 <script src="data/added.js"></script>
+<script src="data/photos.js"></script>
 <script src="data/geo.js"></script>
 <script src="data/labels.js"></script>
 <script src="data/tiles.js"></script>

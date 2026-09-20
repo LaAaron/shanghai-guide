@@ -1,0 +1,60 @@
+name: Inbox
+
+# The app files issues titled "[new-spot]", "[new-photo]" or "[remove-photo]". This job reads every open one (oldest
+# first), validates it with tools/inbox.py, changes the data files, publishes, then comments on and closes each issue.
+# Runs are queued one at a time, and each run sweeps ALL open inbox issues, so nothing is lost if runs pile up.
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pages: write
+
+concurrency:
+  group: inbox
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.event.issue.title, '[new-spot]') ||
+      startsWith(github.event.issue.title, '[new-photo]') ||
+      startsWith(github.event.issue.title, '[remove-photo]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: python -m pip install --quiet pillow
+
+      - name: Validate and apply everything waiting in the inbox
+        id: apply
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python tools/inbox.py apply
+
+      - name: Refresh fingerprints, commit and publish
+        if: steps.apply.outputs.changed != '0' && steps.apply.outputs.changed != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUMMARY: ${{ steps.apply.outputs.summary }}
+        run: |
+          python tools/stamp.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A -- data photos sw.js version.txt
+          git commit -m "Inbox: $SUMMARY"
+          git push
+          gh api -X POST "repos/$GITHUB_REPOSITORY/pages/builds" || true
+
+      - name: Reply on the issues and close them
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python tools/inbox.py report

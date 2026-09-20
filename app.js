@@ -1,6 +1,7 @@
 (function(){
   const { CATEGORIES, SEED_PLACES, METRO_STATIONS, MAP_TILES, SH_DISTRICTS, ROAD_NAMES, ROAD_POLYS, AREAS } = window.SG;
   const ADDED_PLACES = window.SG.ADDED_PLACES || [];      // spots added through the app and approved (data/added.js)
+  const SHARED_PHOTOS = window.SG.PHOTOS || {};             // photos shared with everyone (data/photos.js, files in photos/)
   const SHARE_REPO = 'LaAaron/shanghai-guide';
   let userPlaces = [];
   let activeCat = "all";
@@ -166,7 +167,7 @@
         distHtml('dist', p) +
         '<div class="addr">' + esc(p.addr) + (p.approx ? ' · approximate pin' : '') + '</div>' +
         (p.flag ? '<div class="flag">' + WARN_SVG + '<span>' + esc(p.flag) + '</span></div>' : '') +
-        (p.userAdded ? '<div class="local-tag"><b>On this phone only</b><button type="button" data-act="share">Share with everyone</button><button type="button" class="plain" data-act="remove">Delete</button></div>' : '') +
+        (p.userAdded ? localTagHtml(p) : '') +
         '<div class="dir-row"><button type="button" class="dir-btn primary" data-act="dir">Directions</button>' +
           (hasCoords ? '<button type="button" class="dir-btn" data-act="map">Show on map</button>' : '') +
           photoBtnHtml(p.id, 'data-act="photos"') +
@@ -210,6 +211,7 @@
     if (btn && btn.dataset.act === 'dir'){ openDirections(id); return; }
     if (btn && btn.dataset.act === 'photos'){ openPhotos(id); return; }
     if (btn && btn.dataset.act === 'share'){ sharePlace(id); return; }
+    if (btn && btn.dataset.act === 'retry'){ retryPlace(id); return; }
     if (btn && btn.dataset.act === 'remove'){ removeLocalPlace(id); return; }
     selectPlace(id, true);
   });
@@ -248,7 +250,7 @@
       (p.flag ? '<div class="pp-flag">' + esc(p.flag) + '</div>' : '') +
       '<div class="dir-row"><button type="button" class="dir-btn primary" data-dir="' + esc(p.id) + '">Directions</button>' +
         photoBtnHtml(p.id, 'data-photos="' + esc(p.id) + '"') +
-        (p.userAdded ? '<button type="button" class="dir-btn" data-share="' + esc(p.id) + '">Share with everyone</button>' : '') + '</div></div>';
+        (p.userAdded && !p.issue ? '<button type="button" class="dir-btn" data-share="' + esc(p.id) + '">' + (syncKey() ? 'Send now' : 'Set up sharing') + '</button>' : '') + '</div></div>';
   }
 
   function renderMap(){
@@ -1006,17 +1008,11 @@
   $('pick-ok').addEventListener('click', confirmPick);
   document.addEventListener('keydown', e => { if (!picking) return; if (e.key === 'Enter'){ e.preventDefault(); confirmPick(); } else if (e.key === 'Escape') endPick(true); });
 
-  // ---- sharing: opens a pre-filled GitHub issue; a GitHub job checks who sent it and adds it for everyone
-  function shareUrl(p){
-    const payload = { id:p.id, name:p.name, zh:p.zh || '', cat:p.cat, district:p.district || '', addr:p.addr || '', note:p.note || '', lat:p.lat, lng:p.lng };
-    const body = 'Tap **Submit new issue** to add this spot to the shared guide.\n\n```json\n' + JSON.stringify(payload, null, 1) + '\n```\n';
-    return 'https://github.com/' + SHARE_REPO + '/issues/new?title=' + encodeURIComponent('[new-spot] ' + p.name) + '&body=' + encodeURIComponent(body);
-  }
-  function sharePlace(id){
+  // ---- sharing: see the Sync block below (spots and photos are sent automatically once a key is set)
+  function sharePlace(){ syncKey() ? syncNow(true) : openSync(); }
+  async function retryPlace(id){
     const p = userPlaces.find(x => x.id === id); if (!p) return;
-    const a = document.createElement('a'); a.href = shareUrl(p); a.target = '_blank'; a.rel = 'noopener';
-    document.body.appendChild(a); a.click(); a.remove();
-    toast('On GitHub, tap “Submit new issue”. It will appear for everyone within a minute or two.', { ms:7000 });
+    delete p.rejected; delete p.issue; delete p.closed; await saveUserPlaces(); renderList(); syncNow(true);
   }
   async function removeLocalPlace(id){
     const p = userPlaces.find(x => x.id === id); if (!p) return;
@@ -1055,7 +1051,8 @@
     addForm.reset(); resetLoc();
     addSheet.close();
     render();
-    toast('Saved on this phone.', { action:'Share', ms:9000, onAction: () => sharePlace(place.id) });
+    if (syncKey()){ toast('Saved. Sending it to the guide…'); syncNow(); }
+    else toast('Saved on this phone. Add the sync key to share it.', { action:'Add key', ms:9000, onAction: openSync });
   });
 
   /* ---------- Where am I: a live "you are here" dot. GPS needs no internet, so this works offline in China ---------- */
@@ -1264,7 +1261,16 @@
   const CAM_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5h3l1.6-2.5h6.8L17 8.5h3a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.4" r="3.6"/></svg>';
   const PLUS_CAM_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5h3l1.6-2.5h6.8L17 8.5h3a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5a1 1 0 0 1 1-1z"/><path d="M12 10.9v5M9.5 13.4h5"/></svg>';
 
-  const photoList = id => photosBySpot[id] || [];
+  const localPhotos = id => photosBySpot[id] || [];
+  const sharedPhotoIds = new Set(Object.values(SHARED_PHOTOS).flat().map(p => p.id));
+  const removedIds = () => new Set(readJson(REMOVALS_KEY, []).map(r => r.id));
+  // this phone's own photos first (full quality), then the ones anyone shared with the guide (~800 px)
+  function photoList(id){
+    const mine = localPhotos(id), gone = removedIds();
+    const theirs = (SHARED_PHOTOS[id] || []).filter(s => !gone.has(s.id) && !mine.some(r => r.id === s.id))
+      .map(s => ({ id:s.id, spot:id, shared:true, by:s.by, thumbUrl:'photos/' + s.id + '.jpg', fullUrl:'photos/' + s.id + '.jpg' }));
+    return mine.concat(theirs);
+  }
   function coverHtml(id, cls, attr){
     const l = photoList(id); if (!l.length) return '';
     return '<button type="button" class="' + cls + '" ' + attr + ' aria-label="Photos"><img src="' + l[0].thumbUrl + '" alt="" decoding="async">' +
@@ -1337,7 +1343,7 @@
     for (const file of files){
       try{
         const v = await shrinkPhoto(file);
-        const l = photoList(spot);
+        const l = localPhotos(spot);
         const rec = { id:'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), spot, order:(l.length ? l[l.length - 1].order : 0) + 1, at:new Date().toISOString(), full:v.full, thumb:v.thumb };
         const tx = photoDb.transaction('photos', 'readwrite'); tx.objectStore('photos').put(rec); await idbDone(tx);
         indexPhoto(rec); ok++;
@@ -1346,18 +1352,24 @@
     grid.classList.remove('ph-busy');
     if (bad) toast(bad === 1 && !ok ? 'Couldn’t read that photo.' : bad + ' photo' + (bad > 1 ? 's' : '') + ' couldn’t be read.');
     refreshSpot(spot);
+    if (ok) syncNow();
   }
   async function removePhoto(rec){
-    const tx = photoDb.transaction('photos', 'readwrite'); tx.objectStore('photos').delete(rec.id); await idbDone(tx);
-    URL.revokeObjectURL(rec.thumbUrl);
-    photosBySpot[rec.spot] = photoList(rec.spot).filter(r => r !== rec);
-    if (!photosBySpot[rec.spot].length) delete photosBySpot[rec.spot];
+    if (!rec.shared){
+      const tx = photoDb.transaction('photos', 'readwrite'); tx.objectStore('photos').delete(rec.id); await idbDone(tx);
+      URL.revokeObjectURL(rec.thumbUrl);
+      photosBySpot[rec.spot] = localPhotos(rec.spot).filter(r => r !== rec);
+      if (!photosBySpot[rec.spot].length) delete photosBySpot[rec.spot];
+    }
+    if (rec.shared || rec.sent || sharedPhotoIds.has(rec.id)){        // it is (or is about to be) in the guide: remove it there too
+      const l = readJson(REMOVALS_KEY, []); l.push({ id:rec.id }); writeJson(REMOVALS_KEY, l); syncNow();
+    }
     refreshSpot(rec.spot);
   }
   async function makeCover(rec){
-    const l = photoList(rec.spot);
+    const l = localPhotos(rec.spot);
     rec.order = (l.length ? l[0].order : 0) - 1;
-    const tx = photoDb.transaction('photos', 'readwrite'); tx.objectStore('photos').put(rec); await idbDone(tx);
+    await putRec(rec);
     l.sort((x, y) => x.order - y.order);
     refreshSpot(rec.spot);
   }
@@ -1395,9 +1407,8 @@
     $('ph-grid').innerHTML = l.map((r, i) =>
       '<button type="button" class="ph-tile" data-i="' + i + '" aria-label="Photo ' + (i + 1) + ' of ' + l.length + '"><img src="' + r.thumbUrl + '" alt="" decoding="async">' + (i === 0 && l.length > 1 ? '<span class="ph-cover-pill">Cover</span>' : '') + '</button>').join('') +
       '<button type="button" class="ph-tile ph-add" data-add>' + PLUS_CAM_SVG + (l.length ? 'Add' : 'Add Photo') + '</button>';
-    $('ph-note').textContent = photoDb
-      ? (l.length ? 'Tap a photo to view it. The first photo is the cover shown on the card.' : 'Take a photo now or pick one from your library. It is saved on this phone, so it works offline too.')
-      : 'Photos can’t be saved in this browser.';
+    $('ph-note').textContent = !photoDb ? 'Photos can’t be saved in this browser.'
+      : (l.length ? 'Tap a photo to view it. The first photo is the cover shown on the card.' : 'Take a photo now or pick one from your library. It is saved on this phone first, so it works offline too.') + photoSyncNote();
   }
   $('ph-grid').addEventListener('click', e => {
     if (e.target.closest('[data-add]')){ askForPhoto(); return; }
@@ -1425,9 +1436,9 @@
   const viewer = $('ph-viewer'), vTrack = $('ph-v-track');
   let vUrls = [], vIndex = 0;
   function buildViewer(at){
-    vUrls.forEach(u => URL.revokeObjectURL(u));
+    vUrls.forEach(u => u.startsWith('blob:') && URL.revokeObjectURL(u));
     const l = photoList(photoSpot);
-    vUrls = l.map(r => URL.createObjectURL(r.full));
+    vUrls = l.map(r => r.full ? URL.createObjectURL(r.full) : r.fullUrl);
     vTrack.innerHTML = vUrls.map(u => '<div class="ph-v-slide"><img src="' + u + '" alt=""></div>').join('');
     vIndex = Math.max(0, Math.min(at, l.length - 1));
     vTrack.style.scrollBehavior = 'auto';
@@ -1438,7 +1449,8 @@
   function syncViewer(){
     const n = photoList(photoSpot).length;
     $('ph-v-count').textContent = n > 1 ? (vIndex + 1) + ' of ' + n : '';
-    $('ph-v-cover').hidden = vIndex === 0;
+    const rec = photoList(photoSpot)[vIndex];
+    $('ph-v-cover').hidden = vIndex === 0 || !rec || !!rec.shared;                      // only this phone's own photos can be reordered
   }
   function openViewer(i){
     viewer.classList.add('open'); viewer.setAttribute('aria-hidden', 'false');
@@ -1447,7 +1459,7 @@
   }
   function closeViewer(){
     viewer.classList.remove('open'); viewer.setAttribute('aria-hidden', 'true');
-    vUrls.forEach(u => URL.revokeObjectURL(u)); vUrls = []; vTrack.innerHTML = '';
+    vUrls.forEach(u => u.startsWith('blob:') && URL.revokeObjectURL(u)); vUrls = []; vTrack.innerHTML = '';
   }
   const viewerAt = () => Math.max(0, Math.min(photoList(photoSpot).length - 1, Math.round(vTrack.scrollLeft / Math.max(1, vTrack.clientWidth))));
   vTrack.addEventListener('scroll', debounce(() => { const i = viewerAt(); if (i !== vIndex){ vIndex = i; syncViewer(); } }, 60), { passive:true });
@@ -1458,7 +1470,8 @@
   });
   $('ph-v-delete').addEventListener('click', () => {
     const rec = photoList(photoSpot)[vIndex = viewerAt()]; if (!rec) return;
-    showMenu([{ label:'Delete Photo', destructive:true, hint:'This photo will be removed from this phone.', run: async () => {
+    const inGuide = rec.shared || rec.sent || sharedPhotoIds.has(rec.id);
+    showMenu([{ label:'Delete Photo', destructive:true, hint:inGuide ? 'This photo will be removed for everyone.' : 'This photo will be removed from this phone.', run: async () => {
       const at = vIndex; await removePhoto(rec);
       if (!photoList(photoSpot).length) closeViewer(); else buildViewer(at);
     } }]);
@@ -1468,6 +1481,219 @@
     if (menuBack.classList.contains('open')){ hideMenu(); e.stopPropagation(); }
     else if (viewer.classList.contains('open')){ closeViewer(); e.stopPropagation(); }
   }, true);
+
+  /* ---------- Sync: spots and photos leave the phone by themselves once a sync key is set ----------
+     Each thing is saved on the phone first. With a key and a connection, the app files a GitHub issue for it; a GitHub job
+     (tools/inbox.py) checks it and adds it to the guide, and everyone gets it with their next update. */
+  const KEY_LS = 'sg-sync-key', NAME_LS = 'sg-sync-name', REMOVALS_KEY = 'sg-photo-removals';
+  function readJson(k, d){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch(e){ return d; } }
+  function writeJson(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); } catch(e){} }
+  const lsGet = k => { try{ return (localStorage.getItem(k) || '').trim(); } catch(e){ return ''; } };
+  const lsSet = (k, v) => { try{ v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch(e){} };
+  const syncKey = () => lsGet(KEY_LS);
+  const syncName = () => lsGet(NAME_LS);
+  let syncBusy = false, syncErr = null, syncTouched = false;        // syncErr: 'key' | 'perm' | 'net' | null
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+
+  class SyncError extends Error { constructor(code, msg){ super(msg); this.code = code; } }
+  async function gh(method, path, body){
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 25000);
+    let r;
+    try{
+      r = await fetch('https://api.github.com' + path, { method, signal:ctl.signal, body: body ? JSON.stringify(body) : undefined,
+        headers: Object.assign({ 'Authorization':'Bearer ' + syncKey(), 'Accept':'application/vnd.github+json', 'X-GitHub-Api-Version':'2022-11-28' }, body ? { 'Content-Type':'application/json' } : {}) });
+    } catch(e){ throw new SyncError('net', 'Can’t reach GitHub right now.'); }
+    finally { clearTimeout(t); }
+    if (r.status === 401) throw new SyncError('key', 'GitHub doesn’t accept this key. It may be mistyped or expired.');
+    if (r.status === 429 || (r.status === 403 && (r.headers.get('x-ratelimit-remaining') === '0' || r.headers.get('retry-after')))) throw new SyncError('net', 'GitHub asked us to slow down. It will retry.');
+    if (r.status === 403 || r.status === 404) throw new SyncError('perm', 'This key can’t post to the guide. It needs “Issues: Read and write” on the shanghai-guide repository.');
+    if (!r.ok) throw new SyncError('net', 'GitHub answered with an error (' + r.status + '). It will retry.');
+    return r.status === 204 ? null : r.json();
+  }
+  async function postIssue(title, payload){
+    const n = syncName();
+    const body = 'Sent from the Shanghai Guide app.\n\n```json\n' + JSON.stringify(n ? Object.assign({ who:n }, payload) : payload) + '\n```\n';
+    return (await gh('POST', '/repos/' + SHARE_REPO + '/issues', { title, body })).number;
+  }
+  async function putRec(rec){
+    const clean = Object.assign({}, rec); delete clean.thumbUrl;
+    const tx = photoDb.transaction('photos', 'readwrite'); tx.objectStore('photos').put(clean); await idbDone(tx);
+  }
+
+  // the copy that goes to the guide has to fit inside one GitHub issue (~56 KB of text), so it is smaller than the local one
+  const blobToBase64 = b => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = () => rej(r.error); r.readAsDataURL(b); });
+  async function shareableJpeg(blob){
+    const url = URL.createObjectURL(blob);
+    try{
+      const img = new Image(); img.src = url; await img.decode();
+      for (const [side, q] of [[1000, .7], [900, .62], [800, .58], [700, .54], [600, .5], [520, .45], [440, .4]]){
+        const s = Math.min(1, side / Math.max(img.naturalWidth, img.naturalHeight));
+        const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(img.naturalWidth * s)); c.height = Math.max(1, Math.round(img.naturalHeight * s));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        const b = await new Promise((res, rej) => c.toBlob(x => x ? res(x) : rej(new Error('encode')), 'image/jpeg', q));
+        const data = await blobToBase64(b);
+        if (data.length <= 56000) return data;
+      }
+      throw new Error('too big');
+    } finally { URL.revokeObjectURL(url); }
+  }
+
+  async function sendSpots(){
+    for (const p of userPlaces.slice()){
+      if (sharedIds.has(p.id) || p.issue || p.rejected) continue;
+      const n = await postIssue('[new-spot] ' + p.name, { id:p.id, name:p.name, zh:p.zh || '', cat:p.cat, district:p.district || '', addr:p.addr || '', note:p.note || '', lat:p.lat, lng:p.lng, approx:!!p.approx });
+      p.issue = n; p.sentAt = Date.now(); syncTouched = true; await saveUserPlaces(); await wait(1500);
+    }
+  }
+  async function sendPhotos(){
+    for (const spot of Object.keys(photosBySpot)){
+      const sp = findPlace(spot); if (!sp) continue;
+      const mine = userPlaces.find(x => x.id === spot);
+      if (mine && !sharedIds.has(spot) && (!mine.issue || mine.rejected)) continue;      // wait until its spot has been sent
+      for (const rec of localPhotos(spot).slice()){
+        if (rec.sent || rec.rejected || sharedPhotoIds.has(rec.id)) continue;
+        let data;
+        try{ data = await shareableJpeg(rec.full); } catch(e){ rec.rejected = 'This photo could not be prepared for sharing.'; syncTouched = true; await putRec(rec); continue; }
+        rec.sent = await postIssue('[new-photo] ' + sp.name, { id:rec.id, spot, data });
+        rec.sentAt = Date.now(); syncTouched = true; await putRec(rec); await wait(1500);
+      }
+    }
+  }
+  async function sendRemovals(){
+    const l = readJson(REMOVALS_KEY, []);
+    for (const r of l){
+      if (r.issue) continue;
+      r.issue = await postIssue('[remove-photo] ' + r.id, { id:r.id });
+      syncTouched = true; writeJson(REMOVALS_KEY, l); await wait(1500);
+    }
+  }
+  // did the guide accept what we sent? (issues closed as "not planned" were refused, and the reply says why)
+  async function checkSent(){
+    const items = [];
+    userPlaces.forEach(p => { if (p.issue && !sharedIds.has(p.id) && !p.rejected && !p.closed) items.push({ obj:p, n:p.issue, at:p.sentAt, save:saveUserPlaces }); });
+    Object.values(photosBySpot).flat().forEach(r => { if (r.sent && !sharedPhotoIds.has(r.id) && !r.rejected && !r.closed) items.push({ obj:r, n:r.sent, at:r.sentAt, save:() => putRec(r) }); });
+    for (const it of items){
+      if (Date.now() - (it.at || 0) < 90000) continue;
+      const iss = await gh('GET', '/repos/' + SHARE_REPO + '/issues/' + it.n);
+      if (iss.state !== 'closed') continue;
+      if (iss.state_reason === 'not_planned'){
+        const cs = await gh('GET', '/repos/' + SHARE_REPO + '/issues/' + it.n + '/comments?per_page=10');
+        const ours = cs.filter(c => c.user && c.user.login === 'github-actions[bot]');
+        it.obj.rejected = String((ours.length ? ours[ours.length - 1].body : '') || 'The guide did not accept this.').slice(0, 240);
+      } else it.obj.closed = true;
+      syncTouched = true; await it.save();
+    }
+  }
+
+  function pendingCounts(){
+    const spots = userPlaces.filter(p => !sharedIds.has(p.id) && !p.issue && !p.rejected).length;
+    const photos = Object.entries(photosBySpot).reduce((n, [spot, l]) => {
+      const mine = userPlaces.find(x => x.id === spot);
+      if (mine && mine.rejected) return n;
+      return n + l.filter(r => !r.sent && !r.rejected && !sharedPhotoIds.has(r.id)).length;
+    }, 0);
+    const removals = readJson(REMOVALS_KEY, []).filter(r => !r.issue).length;
+    return { spots, photos, removals, total: spots + photos + removals };
+  }
+  // sent, but the guide has not answered yet: keep checking now and then
+  function awaitingAnswer(){
+    return userPlaces.some(p => p.issue && !sharedIds.has(p.id) && !p.rejected && !p.closed) ||
+      Object.values(photosBySpot).flat().some(r => r.sent && !sharedPhotoIds.has(r.id) && !r.rejected && !r.closed);
+  }
+  const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+  function pendingText(c){
+    return [c.spots && plural(c.spots, 'spot'), c.photos && plural(c.photos, 'photo'), c.removals && plural(c.removals, 'photo removal')].filter(Boolean).join(', ');
+  }
+
+  async function syncNow(manual){
+    if (syncBusy) return;
+    if (!syncKey()){ updateSyncUi(); return; }
+    if (!navigator.onLine){ updateSyncUi(); if (manual) toast('No connection. It will send as soon as you’re online.'); return; }
+    syncBusy = true; syncErr = null; syncTouched = false; updateSyncUi();
+    try{
+      await sendSpots(); await sendPhotos(); await sendRemovals(); await checkSent();
+      if (manual) toast(pendingCounts().total ? 'Some items are still waiting.' : 'Everything is sent.');
+    } catch(e){
+      syncErr = e.code || 'net';
+      if (e.code === 'key' || e.code === 'perm' || manual) toast(e.message || 'Couldn’t sync just now. It will retry.', { ms:8000 });
+      if (!e.code) console.warn(e);
+    } finally {
+      syncBusy = false; updateSyncUi();
+      if (syncTouched || manual){ renderList(); if (photoSpot) renderPhotoSheet(); }
+    }
+  }
+
+  function localTagHtml(p){
+    if (p.rejected) return '<div class="local-tag warn"><b>Not accepted</b><span class="lt-why">' + esc(p.rejected) + '</span><button type="button" data-act="retry">Try again</button><button type="button" class="plain" data-act="remove">Delete</button></div>';
+    if (p.issue) return '<div class="local-tag"><b>Sent to the guide</b><span class="lt-why">Everyone gets it with their next update.</span></div>';
+    const k = syncKey();
+    return '<div class="local-tag"><b>' + (k ? (syncBusy ? 'Sending…' : 'Waiting to send') : 'On this phone only') + '</b>' +
+      '<button type="button" data-act="share">' + (k ? 'Send now' : 'Set up sharing') + '</button><button type="button" class="plain" data-act="remove">Delete</button></div>';
+  }
+  function photoSyncNote(){
+    const mine = localPhotos(photoSpot), waiting = mine.filter(r => !r.sent && !r.rejected && !sharedPhotoIds.has(r.id)), bad = mine.filter(r => r.rejected);
+    let s = '';
+    if (waiting.length) s += syncKey() ? ' ' + waiting.length + ' waiting to send to everyone.' : ' Add the sync key (top right) to share ' + (waiting.length > 1 ? 'these' : 'this') + ' with everyone.';
+    if (bad.length) s += ' Not accepted: ' + bad[0].rejected;
+    return s;
+  }
+
+  /* the Sync sheet: paste the key once */
+  const syncSheet = makeSheet($('sync-backdrop'), $('sync-sheet'));
+  const maskKey = k => k ? k.slice(0, 11) + '…' + k.slice(-4) : '';
+  function updateSyncUi(){
+    const b = $('sync-btn'), c = pendingCounts(), has = !!syncKey();
+    b.dataset.state = !has ? (c.total ? 'off pending' : 'off') : syncErr === 'key' || syncErr === 'perm' ? 'error' : syncBusy ? 'busy' : c.total ? 'pending' : 'ok';
+    b.setAttribute('aria-label', !has ? 'Sync: not set up' : syncErr === 'key' || syncErr === 'perm' ? 'Sync: key problem' : c.total ? 'Sync: ' + pendingText(c) + ' waiting' : 'Sync: all sent');
+    if ($('sync-backdrop').classList.contains('open')) renderSyncSheet();
+  }
+  function renderSyncSheet(){
+    const has = !!syncKey(), c = pendingCounts();
+    let t, d;
+    if (!has){ t = 'Not set up'; d = 'Paste the sync key below and spots and photos you add are shared with everyone automatically. Until then they stay on this phone.'; }
+    else if (syncErr === 'key' || syncErr === 'perm'){ t = 'Key problem'; d = syncErr === 'key' ? 'GitHub doesn’t accept the saved key. Paste a new one.' : 'The saved key can’t post to the guide. It needs “Issues: Read and write” on the shanghai-guide repository.'; }
+    else if (syncBusy){ t = 'Sending…'; d = pendingText(c) || 'Checking for anything new.'; }
+    else if (c.total){ t = 'Waiting to send'; d = pendingText(c) + (navigator.onLine ? '.' : ' — sends by itself when you’re back online.'); }
+    else { t = 'All sent'; d = 'Everything from this phone is in the guide or on its way. Other phones get it with their next update.'; }
+    $('sync-st-title').textContent = t; $('sync-st-detail').textContent = d;
+    $('sync-status').dataset.state = has ? (syncErr === 'key' || syncErr === 'perm' ? 'error' : 'ok') : 'off';
+    $('sync-key').placeholder = has ? maskKey(syncKey()) + '  (saved)' : 'github_pat_…';
+    $('sync-name').value = syncName();
+    $('sync-now').hidden = !has; $('sync-remove').hidden = !has;
+  }
+  function openSync(){ $('sync-msg').textContent = ''; $('sync-key').value = ''; renderSyncSheet(); syncSheet.open(); }
+  $('sync-btn').addEventListener('click', openSync);
+  $('sync-close').addEventListener('click', () => syncSheet.close());
+  $('sync-save').addEventListener('click', async () => {
+    const msg = $('sync-msg'), key = $('sync-key').value.trim();
+    lsSet(NAME_LS, $('sync-name').value.replace(/[^A-Za-z0-9 -]/g, '').trim().slice(0, 20));
+    if (!key){ msg.textContent = syncKey() ? 'Name saved.' : 'Paste the key first.'; renderSyncSheet(); return; }
+    if (!/^(github_pat_|ghp_)[A-Za-z0-9_]{20,}$/.test(key)){ msg.textContent = 'That doesn’t look like a GitHub key. It starts with github_pat_'; return; }
+    lsSet(KEY_LS, key); $('sync-key').value = ''; syncErr = null; msg.textContent = 'Checking…';
+    try{
+      await gh('GET', '/repos/' + SHARE_REPO);
+      msg.textContent = 'Key accepted. Sending anything that’s waiting…'; renderSyncSheet(); syncNow();
+    } catch(e){
+      msg.textContent = e.code === 'net' ? 'Saved. Couldn’t reach GitHub just now; it will check again when there’s a connection.' : e.message;
+      if (e.code === 'key'){ lsSet(KEY_LS, ''); }
+      renderSyncSheet();
+    }
+    updateSyncUi();
+  });
+  $('sync-now').addEventListener('click', () => { $('sync-msg').textContent = ''; syncNow(true); });
+  $('sync-remove').addEventListener('click', () => {
+    if (!window.confirm('Remove the sync key from this phone? Things you add will stay on this phone until a key is added again.')) return;
+    lsSet(KEY_LS, ''); syncErr = null; $('sync-msg').textContent = 'Key removed.'; updateSyncUi(); renderList();
+  });
+  function startSync(){
+    writeJson(REMOVALS_KEY, readJson(REMOVALS_KEY, []).filter(r => !r.issue || sharedPhotoIds.has(r.id)));     // a removal is done once the photo is gone from the guide
+    updateSyncUi();
+    setTimeout(() => syncNow(), 2000);
+    window.addEventListener('online', () => syncNow());
+    const due = () => pendingCounts().total || awaitingAnswer();
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && due()) syncNow(); });
+    setInterval(() => { if (!document.hidden && due()) syncNow(); }, 45000);
+  }
 
   async function boot(){
     syncChrome();
@@ -1485,6 +1711,7 @@
     }
     await loadPhotos();
     render();
+    startSync();
   }
 
   if (document.readyState === 'loading'){
