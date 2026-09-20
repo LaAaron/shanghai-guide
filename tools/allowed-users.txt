@@ -1,3 +1,4 @@
 # GitHub usernames allowed to add spots to the shared guide (one per line; # starts a comment).
 # A spot submitted by anyone else is ignored.
 LaAaron
+RiyaLaGivane

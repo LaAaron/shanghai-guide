@@ -30,6 +30,7 @@
   };
   const svgIcon = name => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[name] + '</svg>';
   const WARN_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.2l6.2 11H1.8z"/><path d="M8 6.5v3.2M8 11.6v.1"/></svg>';
+  const NAV_SVG = '<svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 4L4 10.5l6.5 2.5 2.5 6.5z"/></svg>';
   const CHEVRON_SVG = '<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg>';
 
   const listPane = $('list-pane');
@@ -103,6 +104,12 @@
       wrap.appendChild(sel);
       catChipRow.appendChild(wrap);
 
+      const near = document.createElement('button');
+      near.type = 'button'; near.className = 'chip chip-near'; near.id = 'near-chip';
+      near.innerHTML = NAV_SVG + 'Nearest';
+      near.addEventListener('click', toggleNearest);
+      catChipRow.appendChild(near);
+
       const mk = (label, key, color) => {
         const b = document.createElement('button');
         b.type = 'button';
@@ -128,7 +135,9 @@
     const dc = $('district-chip');
     dc.classList.toggle('active', activeDistrict !== 'all');
     dc.querySelector('.chip-label').textContent = activeDistrict === 'all' ? 'All districts' : activeDistrict;
-    catChipRow.querySelectorAll('button.chip').forEach(b => {
+    $('near-chip').classList.toggle('active', sortNearest);
+    $('near-chip').setAttribute('aria-pressed', sortNearest ? 'true' : 'false');
+    catChipRow.querySelectorAll('button.chip[data-cat]').forEach(b => {
       const key = b.dataset.cat, on = key === activeCat;
       const empty = key !== 'all' && !on && !(byCat[key] > 0);              // greyed out and unselectable: nothing to show
       b.classList.toggle('active', on);
@@ -153,6 +162,7 @@
         '<div class="row1"><h3>' + esc(p.name) + '</h3><span class="cat-tag" style="background:' + c.color + ';color:' + c.ink + '">' + esc(c.label) + '</span></div>' +
         (p.zh ? '<div class="zh">' + esc(p.zh) + '</div>' : '') +
         (p.note ? '<div class="note">' + esc(p.note) + '</div>' : '') +
+        distHtml('dist', p) +
         '<div class="addr">' + esc(p.addr) + (p.approx ? ' · approximate pin' : '') + '</div>' +
         (p.flag ? '<div class="flag">' + WARN_SVG + '<span>' + esc(p.flag) + '</span></div>' : '') +
         (p.userAdded ? '<div class="local-tag"><b>On this phone only</b><button type="button" data-act="share">Share with everyone</button><button type="button" class="plain" data-act="remove">Delete</button></div>' : '') +
@@ -172,6 +182,15 @@
       return;
     }
 
+    if (sortNearest){
+      if (!me){
+        listPane.innerHTML = '<div class="empty-msg">Finding where you are…<br>GPS works without internet. It can take up to a minute, ideally outdoors.</div>';
+        return;
+      }
+      const ranked = filtered.map(p => ({ p, d: p.lat && p.lng ? distanceM([me.lat, me.lng], [p.lat, p.lng]) : Infinity })).sort((a, b) => a.d - b.d);
+      listPane.innerHTML = '<section><div class="district-heading">Nearest to you</div><div class="district-group">' + ranked.map(x => cardHtml(x.p)).join('') + '</div></section>';
+      return;
+    }
     const byDistrict = {};
     filtered.forEach(p => { (byDistrict[p.district] = byDistrict[p.district] || []).push(p); });
     listPane.innerHTML = Object.keys(byDistrict).sort().map(d =>
@@ -221,6 +240,7 @@
       '<div class="pp-title">' + esc(p.name) + '</div>' +
       (p.zh ? '<div class="pp-zh">' + esc(p.zh) + '</div>' : '') +
       (p.note ? '<div class="pp-note">' + esc(p.note) + '</div>' : '') +
+      distHtml('pp-dist', p) +
       '<div class="pp-addr">' + esc(p.addr) + (p.approx ? ' · approximate pin' : '') + '</div>' +
       (p.flag ? '<div class="pp-flag">' + esc(p.flag) + '</div>' : '') +
       '<div class="dir-row"><button type="button" class="dir-btn primary" data-dir="' + esc(p.id) + '">Directions</button>' +
@@ -240,7 +260,7 @@
       const n = seen[k] = (seen[k] || 0) + 1;
       const off = n > 1 ? 0.00025 * n : 0;
       const marker = L.marker([p.lat + off*Math.sin(n*2), p.lng + off*Math.cos(n*2)], { icon: pinIcon(p.cat, p.id === selectedId), keyboard:false });
-      marker.bindPopup(popupHtml(p), { maxWidth:280, minWidth:220, closeButton:false, autoPanPaddingTopLeft:[16, pad.top], autoPanPaddingBottomRight:[16, pad.bottom] });
+      marker.bindPopup(() => popupHtml(p), { maxWidth:280, minWidth:220, closeButton:false, autoPanPaddingTopLeft:[16, pad.top], autoPanPaddingBottomRight:[16, pad.bottom] });
       marker.on('click', () => selectPlace(p.id, false));
       marker.addTo(map);
       if (p.id === selectedId) marker.setZIndexOffset(1000);
@@ -698,6 +718,7 @@
     map.setMaxBounds(geo.getBounds().pad(0.2));
     $('fit-btn').addEventListener('click', fitVisible);
     map.on('click', e => { if (picking){ setLoc(e.latlng.lat, e.latlng.lng, 'picked on map'); endPick(true); } });
+    map.on('contextmenu', e => { if (!picking) showAddHere(e.latlng); });
     $('map-legend').open = !isMobile();
     new ResizeObserver(() => map.invalidateSize()).observe($('map-pane'));
   }
@@ -901,7 +922,10 @@
   function resetLoc(){ showLoc('No location yet'); clearPickMarker(); }
   function syncTyped(){
     const lat = parseFloat($('f-lat').value), lng = parseFloat($('f-lng').value);
-    if (isFinite(lat) && isFinite(lng)) showLoc(lat.toFixed(5) + ', ' + lng.toFixed(5) + ' · typed', 'ok'); else showLoc('No location yet');
+    if (isFinite(lat) && isFinite(lng)){
+      if (!inArea(lat, lng)) showLoc('That’s outside the Shanghai area this guide covers.', 'err');
+      else showLoc(lat.toFixed(5) + ', ' + lng.toFixed(5) + ' · typed', 'ok');
+    } else showLoc('No location yet');
   }
   $('f-lat').addEventListener('input', syncTyped); $('f-lng').addEventListener('input', syncTyped);
 
@@ -910,6 +934,7 @@
     showLoc('Finding you…');
     navigator.geolocation.getCurrentPosition(pos => {
       const g = wgs2gcj(pos.coords.latitude, pos.coords.longitude);
+      if (!inArea(g[0], g[1])){ showLoc('You’re not in Shanghai right now, so your location can’t be used for this spot. Use “Pick on map” instead.', 'err'); return; }
       setLoc(g[0], g[1], 'my location (±' + Math.round(pos.coords.accuracy) + ' m)');
       if (map) map.setView(g, Math.max(map.getZoom(), 16), { animate:false });
     }, err => {
@@ -940,7 +965,7 @@
     const p = userPlaces.find(x => x.id === id); if (!p) return;
     const a = document.createElement('a'); a.href = shareUrl(p); a.target = '_blank'; a.rel = 'noopener';
     document.body.appendChild(a); a.click(); a.remove();
-    if (window.sgToast) window.sgToast('On GitHub, tap “Submit new issue”. It will appear for everyone within a minute or two.', { ms:7000 });
+    toast('On GitHub, tap “Submit new issue”. It will appear for everyone within a minute or two.', { ms:7000 });
   }
   async function removeLocalPlace(id){
     const p = userPlaces.find(x => x.id === id); if (!p) return;
@@ -960,6 +985,7 @@
     if (!name) return;
     const lat = parseFloat($('f-lat').value);
     const lng = parseFloat($('f-lng').value);
+    if (isFinite(lat) && isFinite(lng) && !inArea(lat, lng)){ showLoc('That’s outside the Shanghai area this guide covers, so it can’t be pinned. Pick a spot on the map instead.', 'err'); return; }
     const place = {
       id: 'u-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8),
       name: name,
@@ -978,7 +1004,126 @@
     addForm.reset(); resetLoc();
     addSheet.close();
     render();
-    if (window.sgToast) window.sgToast('Saved on this phone.', { action:'Share', ms:9000, onAction: () => sharePlace(place.id) });
+    toast('Saved on this phone.', { action:'Share', ms:9000, onAction: () => sharePlace(place.id) });
+  });
+
+  /* ---------- Where am I: a live "you are here" dot. GPS needs no internet, so this works offline in China ---------- */
+  const toast = (msg, opts) => { if (window.sgToast) window.sgToast(msg, opts); };
+  const AREA = { latMin:30.4, latMax:32.0, lngMin:120.6, lngMax:122.4 };            // the Shanghai area this guide covers
+  const inArea = (lat, lng) => lat >= AREA.latMin && lat <= AREA.latMax && lng >= AREA.lngMin && lng <= AREA.lngMax;
+  let me = null, watchId = null, meMarker = null, meCircle = null, meDemo = false, sortNearest = false, lastSortPos = null, geoNoteShown = false;
+
+  function distanceM(a, b){
+    const dx = (b[1] - a[1]) * Math.cos((a[0] + b[0]) * Math.PI / 360) * 111320, dy = (b[0] - a[0]) * 110860;
+    return Math.hypot(dx, dy);
+  }
+  function fmtDist(m){ return m < 950 ? Math.max(10, Math.round(m / 10) * 10) + ' m' : (m < 9950 ? (m / 1000).toFixed(1) : Math.round(m / 1000)) + ' km'; }
+  function distTextFor(p){
+    if (!me || !p.lat || !p.lng) return '';
+    const d = distanceM([me.lat, me.lng], [p.lat, p.lng]);
+    return fmtDist(d) + ' away' + (d <= 2500 ? ' · ' + Math.max(1, Math.round(d / 80)) + ' min walk' : '');
+  }
+  function distHtml(cls, p){
+    const t = distTextFor(p);
+    return '<div class="' + cls + '" data-dist="' + esc(p.id) + '"' + (t ? '' : ' hidden') + '>' + esc(t) + '</div>';
+  }
+  function updateDistances(){
+    document.querySelectorAll('[data-dist]').forEach(el => {
+      const p = findPlace(el.getAttribute('data-dist')), t = p ? distTextFor(p) : '';
+      el.textContent = t; el.hidden = !t;
+    });
+  }
+  function setLocateState(s){
+    const b = $('locate-btn');
+    b.dataset.state = s; b.setAttribute('aria-pressed', s === 'on' ? 'true' : 'false');
+    b.title = s === 'on' ? 'Recentre on me (tap again when centred to switch off)' : s === 'locating' ? 'Finding you…' : 'Show where I am';
+  }
+  function drawMe(){
+    if (!map || !me) return;
+    const ll = [me.lat, me.lng], r = Math.min(me.acc || 30, 300);
+    if (!meMarker || meDemo !== me.demo){
+      if (meMarker) map.removeLayer(meMarker);
+      meMarker = L.marker(ll, { icon: L.divIcon({ className:'me-icon', html:'<div class="me-dot"><i></i></div>' + (me.demo ? '<span class="me-tag">Demo</span>' : ''), iconSize:[22,22], iconAnchor:[11,11] }), interactive:false, keyboard:false, zIndexOffset:3000 }).addTo(map);
+      meDemo = me.demo;
+    } else meMarker.setLatLng(ll);
+    if (!meCircle) meCircle = L.circle(ll, { radius:r, stroke:false, fillColor:'#3B82F6', fillOpacity:.13, interactive:false }).addTo(map);
+    else meCircle.setLatLng(ll).setRadius(r);
+  }
+  function stopLocate(clear){
+    if (watchId != null && navigator.geolocation) navigator.geolocation.clearWatch(watchId);
+    watchId = null; geoNoteShown = false;
+    if (clear){
+      me = null;
+      if (meMarker){ map.removeLayer(meMarker); meMarker = null; }
+      if (meCircle){ map.removeLayer(meCircle); meCircle = null; }
+      const wasNearest = sortNearest; sortNearest = false;
+      updateDistances();
+      if (wasNearest){ buildChips(); renderList(); }
+    }
+    setLocateState('off');
+  }
+  function afterFix(first){
+    drawMe(); updateDistances();
+    if (sortNearest && me && (!lastSortPos || distanceM(lastSortPos, [me.lat, me.lng]) > 60)){ lastSortPos = [me.lat, me.lng]; renderList(); }
+    if (first && map) map.setView([me.lat, me.lng], Math.max(map.getZoom(), 16), { animate:false });
+  }
+  function onFix(pos){
+    const g = wgs2gcj(pos.coords.latitude, pos.coords.longitude);          // GPS reports plain WGS-84; the map is GCJ-02
+    if (!inArea(g[0], g[1])){ stopLocate(true); notInShanghai(); return; }
+    const first = !me;
+    me = { lat:g[0], lng:g[1], acc:pos.coords.accuracy || 30, demo:false };
+    setLocateState('on');
+    afterFix(first);
+    if (first) toast('Location on. Tap the arrow again to recentre, and once more when centred to switch off.', { ms:5500 });
+  }
+  function onGeoError(err){
+    if (err && err.code === 1){
+      stopLocate(true);
+      toast('Location is switched off for this app. On iPhone: Settings → Privacy & Security → Location Services → allow it for Safari Websites, then try again.', { ms:10000 });
+      return;
+    }
+    if (!geoNoteShown){ geoNoteShown = true; toast('Still looking for a GPS signal. It works without internet but can take a minute, ideally outdoors.', { ms:6500 }); }
+  }
+  function startLocate(){
+    if (!navigator.geolocation){ toast('This device can’t share its location.'); if (sortNearest){ sortNearest = false; buildChips(); renderList(); } return; }
+    if (watchId != null) return;
+    setLocateState('locating');
+    watchId = navigator.geolocation.watchPosition(onFix, onGeoError, { enableHighAccuracy:true, maximumAge:5000, timeout:30000 });
+  }
+  function notInShanghai(){
+    toast('You’re not in Shanghai right now, so there’s nothing to show yet. Try a demo to see how it will look.', { action:'Try demo', ms:12000, onAction: startDemo });
+  }
+  function startDemo(){
+    const st = METRO_STATIONS.find(s => s[0] === "People's Square") || METRO_STATIONS[0];
+    stopLocate(false);
+    me = { lat:st[1], lng:st[2], acc:25, demo:true };
+    setLocateState('on');
+    afterFix(true);
+    toast('Demo location: People’s Square. Tap the arrow twice to switch it off.', { ms:6000 });
+  }
+  function toggleNearest(){
+    if (sortNearest){ sortNearest = false; buildChips(); renderList(); return; }
+    sortNearest = true; lastSortPos = null;
+    if (!me) startLocate(); else lastSortPos = [me.lat, me.lng];
+    buildChips(); renderList();
+  }
+  $('locate-btn').addEventListener('click', () => {
+    if (!me){ if (watchId == null) startLocate(); return; }
+    const c = map.latLngToContainerPoint([me.lat, me.lng]), mid = map.getSize().divideBy(2);
+    if (c.distanceTo(mid) < 40 && map.getZoom() >= 15){ stopLocate(true); return; }     // already centred: this tap switches it off
+    map.setView([me.lat, me.lng], Math.max(map.getZoom(), 16), { animate:true });
+  });
+
+  // long-press (or right-click) the map to add a spot right there
+  function showAddHere(ll){
+    L.popup({ closeButton:false, offset:[0, -2] }).setLatLng(ll)
+      .setContent('<div class="pp"><div class="pp-title">Add a spot here?</div><div class="dir-row"><button type="button" class="dir-btn primary" data-addhere="' + ll.lat.toFixed(6) + ',' + ll.lng.toFixed(6) + '">Add a find</button></div></div>').openOn(map);
+  }
+  document.addEventListener('click', e => {
+    const b = e.target.closest && e.target.closest('[data-addhere]');
+    if (!b) return;
+    const ll = b.getAttribute('data-addhere').split(',').map(Number);
+    map.closePopup(); setLoc(ll[0], ll[1], 'picked on map'); addSheet.open();
   });
 
   const STORAGE_KEY = 'shanghai-eats-user-places';

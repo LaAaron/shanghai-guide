@@ -528,3 +528,22 @@
   }
   .pickbar button{ height:30px; padding:0 13px; border:0; border-radius:15px; background:var(--fill); color:var(--label); font-size:13.5px; font-weight:600; }
   #map.picking, #map.picking .leaflet-interactive, #map.picking .leaflet-grab{ cursor:crosshair !important; }
+
+
+  /* ============ Where am I ============ */
+  #locate-btn{ top:calc(var(--map-top) + 163px); }
+  #locate-btn[data-state="on"]{ background:var(--accent); color:#fff; }
+  #locate-btn[data-state="on"] svg{ fill:currentColor; }
+  #locate-btn[data-state="locating"] svg{ animation:ocpulse 1.2s ease-in-out infinite; }
+  @media (max-width:860px){ #locate-btn{ top:calc(var(--map-top) + 64px); } }
+  .me-icon{ pointer-events:none; }
+  .me-dot{ position:relative; width:22px; height:22px; border-radius:50%; background:#fff; box-shadow:0 1px 5px rgba(0,0,0,.35); display:grid; place-items:center; }
+  .me-dot i{ width:14px; height:14px; border-radius:50%; background:#3B82F6; display:block; }
+  .me-dot::after{ content:""; position:absolute; inset:-6px; border-radius:50%; border:2px solid rgba(59,130,246,.5); animation:mepulse 2.2s ease-out infinite; }
+  @keyframes mepulse{ from{ transform:scale(.6); opacity:.9; } to{ transform:scale(1.5); opacity:0; } }
+  .me-tag{ position:absolute; left:28px; top:2px; padding:1px 7px; border-radius:8px; background:var(--accent); color:#fff; font:600 10.5px/1.5 var(--font); }
+  .dist{ margin-top:4px; font-size:12.5px; font-weight:600; color:var(--accent-ink); font-variant-numeric:tabular-nums; }
+  .pp-dist{ margin-top:6px; font-size:13px; font-weight:600; color:var(--accent-ink); font-variant-numeric:tabular-nums; }
+  .chip-near svg{ width:14px; height:14px; fill:none; }
+  .chip-near.active svg{ fill:currentColor; }
+  @media (prefers-reduced-motion: reduce){ .me-dot::after{ animation:none; opacity:.5; } #locate-btn[data-state="locating"] svg{ animation:none; } }
