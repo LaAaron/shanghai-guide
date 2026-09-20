@@ -554,21 +554,41 @@
   @media (prefers-reduced-motion: reduce){ .me-dot::after{ animation:none; opacity:.5; } #locate-btn[data-state="locating"] svg{ animation:none; } }
 
 
-  /* ============ Pick on map: a hovering, glowing pin ============ */
+  /* ============ Pick on map / hold to add: a hovering, glowing pin ============ */
   .pk-icon{ pointer-events:auto; cursor:grab !important; }
   .pk-icon:active{ cursor:grabbing !important; }
   .pk{ position:relative; width:44px; height:60px; }
-  .pk-ground{ position:absolute; left:50%; top:54px; width:22px; height:8px; margin:-4px 0 0 -11px; border-radius:50%; background:rgba(60,40,20,.30); filter:blur(1.5px); transition:transform .2s var(--ease-out), opacity .2s; }
-  .pk-glow{ position:absolute; left:50%; top:54px; width:14px; height:14px; margin:-7px 0 0 -7px; border-radius:50%; background:radial-gradient(circle, rgba(91,134,238,.7), rgba(91,134,238,0) 70%); animation:pkglow 1.7s ease-in-out infinite; }
-  @keyframes pkglow{ 0%,100%{ transform:scale(1); opacity:.95; } 50%{ transform:scale(3.4); opacity:.25; } }
-  .pk-pin{ position:absolute; left:5px; top:12px; width:34px; height:42px; transform:translateY(-6px); filter:drop-shadow(0 0 7px rgba(91,134,238,.75)); animation:pkbob 1.7s ease-in-out infinite; }
-  @keyframes pkbob{ 0%,100%{ transform:translateY(-5px); } 50%{ transform:translateY(-11px); } }
-  .pk.lift .pk-pin{ animation:none; transform:translateY(-22px) scale(1.12); transition:transform .18s var(--ease-out); }
+  .pk-ground{ position:absolute; left:50%; top:54px; width:22px; height:8px; margin:-4px 0 0 -11px; border-radius:50%; background:rgba(60,40,20,.30); filter:blur(1.5px); transition:transform .25s var(--ease-out), opacity .25s; }
+  .pk-glow{ position:absolute; left:50%; top:54px; width:14px; height:14px; margin:-7px 0 0 -7px; border-radius:50%; background:radial-gradient(circle, rgba(91,134,238,.7), rgba(91,134,238,0) 70%); animation:pkglow 2.4s ease-in-out infinite; transition:opacity .2s; }
+  @keyframes pkglow{ 0%,100%{ transform:scale(1); opacity:.95; } 50%{ transform:scale(3); opacity:.3; } }
+  /* the pin (and the bubble above it) float together, drifting about 3px: "in flight, can be moved" */
+  .pk-float{ position:absolute; left:0; top:0; width:44px; height:60px; transform-origin:50% 54px; animation:pkbob 2.4s ease-in-out infinite; will-change:transform; }
+  @keyframes pkbob{ 0%,100%{ transform:translateY(0); } 50%{ transform:translateY(-3px); } }
+  .pk-pin{ position:absolute; left:5px; top:6px; width:34px; height:42px; filter:drop-shadow(0 0 7px rgba(91,134,238,.75)); }
+  /* held: lifts and the ground shadow shrinks; drop: a springy hop when it is placed or moved */
+  .pk.lift .pk-float{ animation:none; transform:translateY(-14px) scale(1.06); transition:transform .2s cubic-bezier(.34,1.56,.64,1); }
   .pk.lift .pk-ground{ transform:scale(.65); opacity:.55; }
-  .pk.drop .pk-pin{ animation:pkdrop .38s var(--ease-out); }
-  @keyframes pkdrop{ 0%{ transform:translateY(-26px); } 65%{ transform:translateY(-2px); } 100%{ transform:translateY(-5px); } }
+  .pk.drop .pk-float{ animation:pkdrop .5s cubic-bezier(.34,1.56,.64,1), pkbob 2.4s ease-in-out .5s infinite; }
+  @keyframes pkdrop{ 0%{ transform:translateY(-22px) scale(.92); opacity:.4; } 100%{ transform:translateY(0) scale(1); opacity:1; } }
+  /* the "Add spot" bubble grows out of the pin (origin = the pin), and leaves the same way */
+  .pk-callout{ position:absolute; left:50%; bottom:58px; transform:translateX(-50%); transform-origin:50% 100%; animation:pkcall .5s cubic-bezier(.34,1.56,.64,1) both; }
+  @keyframes pkcall{ from{ transform:translateX(-50%) scale(.5); opacity:0; } to{ transform:translateX(-50%) scale(1); opacity:1; } }
+  .pk-add{
+    position:relative; display:block; min-height:40px; padding:0 20px; border:0; border-radius:20px; white-space:nowrap;
+    background:var(--surface); color:var(--accent-ink); font:600 15px var(--font); letter-spacing:-.011em;
+    box-shadow:var(--shadow-pop), 0 0 0 .5px var(--sep);
+  }
+  .pk-add::after{ content:""; position:absolute; left:50%; bottom:-5px; width:12px; height:12px; background:var(--surface); transform:translateX(-50%) rotate(45deg); border-radius:0 0 3px 0; }
+  .pk-add:active{ opacity:.6; }
+  .pk.out .pk-float{ animation:pkout .18s ease-in forwards; }
+  .pk.out .pk-glow, .pk.out .pk-ground{ opacity:0; }
+  @keyframes pkout{ to{ opacity:0; transform:translateY(4px) scale(.8); } }
   #map.picking .leaflet-marker-icon:not(.pk-icon), #map.picking .leaflet-tooltip{ pointer-events:none !important; }   /* taps go to the map, not to other pins */
-  @media (prefers-reduced-motion: reduce){ .pk-pin,.pk-glow{ animation:none; } .pk.drop .pk-pin{ animation:none; } }
+  @media (prefers-reduced-motion: reduce){
+    .pk-float, .pk-glow, .pk.drop .pk-float{ animation:none; }
+    .pk-callout{ animation:pkfade .2s both; }
+    @keyframes pkfade{ from{ opacity:0; } to{ opacity:1; } }
+  }
 
   /* Long-press / drag on the map must never select or highlight anything (iOS paints the whole map blue) */
   #map, #map *{ -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }

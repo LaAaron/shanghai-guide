@@ -327,6 +327,7 @@
   });
 
   function switchTab(which){
+    if (typeof dismissQuick === 'function') dismissQuick(true);
     const main = $('main');
     const tabList = $('tab-list'), tabMap = $('tab-map');
     const toMap = which === 'map';
@@ -718,7 +719,9 @@
     map.setMaxBounds(geo.getBounds().pad(0.2));
     $('fit-btn').addEventListener('click', fitVisible);
     map.on('click', e => { if (picking) movePicker(e.latlng); });
-    map.on('contextmenu', e => { if (!picking) showAddHere(e.latlng); });
+    map.createPane('pickPane').style.zIndex = 680;                        // above pins, name labels and district labels
+    map.on('contextmenu', e => { if (!picking && Date.now() - quickAt > 1500) startQuick(e.latlng); });
+    armLongPress();
     $('map-legend').open = !isMobile();
     new ResizeObserver(() => map.invalidateSize()).observe($('map-pane'));
   }
@@ -893,7 +896,7 @@
     catSelect.appendChild(opt);
   });
 
-  $('add-btn').addEventListener('click', () => addSheet.open());
+  $('add-btn').addEventListener('click', () => { dismissQuick(true); addSheet.open(); });
   $('cancel-add').addEventListener('click', () => { addSheet.close(); });
 
   // ---- location: GPS (converted to the map's coordinate system), tap on the map, or typed
@@ -953,25 +956,27 @@
     const ll = picker.getLatLng(), nm = nearestMetro(ll);
     $('pk-info').textContent = ll.lat.toFixed(5) + ', ' + ll.lng.toFixed(5) + (nm ? ' · ' + fmtDist(nm.d) + ' from ' + nm.name + ' metro' : '') + (map.getZoom() < 16 ? ' · zoom in to be more precise' : '');
   }
-  function pickerIcon(){
-    const c = CATEGORIES[catSelect.value] || CATEGORIES.other;
+  const PIN_PATH = '<path d="M17 40C15 36 4.5 27.5 3.5 16A13.5 13.5 0 1 1 30.5 16C29.5 27.5 19 36 17 40z"';
+  function pickerIcon(quick){
+    const c = quick ? { color:'#5B86EE', ink:'#2F5BCB' } : (CATEGORIES[catSelect.value] || CATEGORIES.other);
     return L.divIcon({
       className:'pk-icon', iconSize:[44, 60], iconAnchor:[22, 54],
-      html:'<div class="pk"><i class="pk-glow"></i><i class="pk-ground"></i>' +
-        '<svg class="pk-pin" viewBox="0 0 34 42" aria-hidden="true"><path d="M17 40C15 36 4.5 27.5 3.5 16A13.5 13.5 0 1 1 30.5 16C29.5 27.5 19 36 17 40z" fill="' + c.color + '" stroke="' + c.ink + '" stroke-opacity=".6" stroke-width="1.8" stroke-linejoin="round"/><circle cx="17" cy="16" r="5.5" fill="#fff"/></svg></div>'
+      html:'<div class="pk"><i class="pk-glow"></i><i class="pk-ground"></i><div class="pk-float">' +
+        (quick ? '<div class="pk-callout"><button type="button" class="pk-add" data-quick-add>Add spot</button></div>' : '') +
+        '<svg class="pk-pin" viewBox="0 0 34 42" aria-hidden="true">' + PIN_PATH + ' fill="' + c.color + '" stroke="' + c.ink + '" stroke-opacity=".6" stroke-width="1.8" stroke-linejoin="round"/><circle cx="17" cy="16" r="5.5" fill="#fff"/></svg></div></div>'
     });
   }
   const pkEl = () => picker && picker.getElement() && picker.getElement().querySelector('.pk');
   function hop(){ const e = pkEl(); if (!e) return; e.classList.remove('drop'); void e.offsetWidth; e.classList.add('drop'); }
   function startPick(){
     if (!map) { showLoc('The map isn’t available right now.', 'err'); return; }
-    picking = true; addSheet.close(); map.closePopup();
+    dismissQuick(true); picking = true; addSheet.close(); map.closePopup();
     if (isMobile()) switchTab('map');
     const lat = parseFloat($('f-lat').value), lng = parseFloat($('f-lng').value);
     const start = isFinite(lat) && isFinite(lng) && inArea(lat, lng) ? L.latLng(lat, lng) : map.getCenter();
     if (isFinite(lat) && isFinite(lng) && inArea(lat, lng)) map.setView(start, Math.max(map.getZoom(), 16), { animate:false });
     clearPickMarker();
-    picker = L.marker(start, { icon:pickerIcon(), draggable:true, autoPan:true, autoPanPadding:[70, 90], keyboard:false, zIndexOffset:6000 }).addTo(map);
+    picker = L.marker(start, { icon:pickerIcon(), pane:'pickPane', draggable:true, autoPan:true, autoPanPadding:[70, 90], keyboard:false }).addTo(map);
     picker.on('dragstart', () => { const e = pkEl(); if (e) e.classList.add('lift'); });
     picker.on('drag', pickInfo);
     picker.on('dragend', () => { const e = pkEl(); if (e) e.classList.remove('lift'); pickInfo(); });
@@ -1156,17 +1161,57 @@
     map.setView([me.lat, me.lng], Math.max(map.getZoom(), 16), { animate:true });
   });
 
-  // long-press (or right-click) the map to add a spot right there
-  function showAddHere(ll){
-    L.popup({ closeButton:false, offset:[0, -2] }).setLatLng(ll)
-      .setContent('<div class="pp"><div class="pp-title">Add a spot here?</div><div class="dir-row"><button type="button" class="dir-btn primary" data-addhere="' + ll.lat.toFixed(6) + ',' + ll.lng.toFixed(6) + '">Add a find</button></div></div>').openOn(map);
+  // ---- hold the map (finger or mouse) or right-click: a glowing pin with an "Add spot" bubble floats there and stays until you
+  // ---- touch somewhere else. Drag it to fine-tune. Only tapping "Add spot" moves on to the details.
+  let quick = null, quickAt = 0, lpTimer = 0, lpStart = null;
+  const LP_MS = 520, LP_SLOP = 10;
+  function dismissQuick(now){
+    if (!quick) return;
+    const q = quick; quick = null;
+    const e = q.getElement(), pk = e && e.querySelector('.pk');
+    if (now || !pk){ map.removeLayer(q); return; }
+    pk.classList.add('out');                                             // same path back out: fade + settle, then remove
+    setTimeout(() => map.removeLayer(q), 180);
+  }
+  function startQuick(ll){
+    if (!map || picking) return;
+    dismissQuick(true); map.closePopup();
+    quickAt = Date.now();
+    const q = L.marker(ll, { icon:pickerIcon(true), pane:'pickPane', draggable:true, autoPan:true, autoPanPadding:[70, 90], keyboard:false }).addTo(map);
+    quick = q;
+    q.on('dragstart', () => { const e = q.getElement(), pk = e && e.querySelector('.pk'); if (pk) pk.classList.add('lift'); });
+    q.on('dragend', () => { const e = q.getElement(), pk = e && e.querySelector('.pk'); if (pk) pk.classList.remove('lift'); });
+    const pk = q.getElement() && q.getElement().querySelector('.pk'); if (pk) pk.classList.add('drop');
+  }
+  function armLongPress(){
+    const el = map.getContainer();
+    const cancel = e => { if (lpStart && (!e || e.pointerId === lpStart.id)){ clearTimeout(lpTimer); lpStart = null; } };
+    el.addEventListener('pointerdown', e => {
+      // touching anywhere that isn't the floating pin dismisses it (so a pan or tap elsewhere starts clean)
+      if (quick && !e.target.closest('.pk-icon, .leaflet-control, .map-fab, .map-legend, .pickbar')) dismissQuick();
+      if (lpStart) cancel();                                              // a second finger (pinch) is not a hold
+      if (picking || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      if (e.target.closest('.leaflet-marker-icon, .leaflet-control, .leaflet-popup, .leaflet-tooltip, .map-fab, .map-legend, .pickbar')) return;
+      lpStart = { x:e.clientX, y:e.clientY, id:e.pointerId };
+      clearTimeout(lpTimer);
+      lpTimer = setTimeout(() => {
+        if (!lpStart) return;
+        const ll = map.mouseEventToLatLng({ clientX:lpStart.x, clientY:lpStart.y }); lpStart = null;
+        startQuick(ll);
+      }, LP_MS);
+    });
+    el.addEventListener('pointermove', e => { if (lpStart && Math.hypot(e.clientX - lpStart.x, e.clientY - lpStart.y) > LP_SLOP) cancel(e); });
+    el.addEventListener('pointerup', cancel);
+    el.addEventListener('pointercancel', cancel);
   }
   document.addEventListener('click', e => {
-    const b = e.target.closest && e.target.closest('[data-addhere]');
-    if (!b) return;
-    const ll = b.getAttribute('data-addhere').split(',').map(Number);
-    map.closePopup(); setLoc(ll[0], ll[1], 'picked on map'); addSheet.open();
+    const b = e.target.closest && e.target.closest('[data-quick-add]');
+    if (!b || !quick) return;
+    const ll = quick.getLatLng();
+    dismissQuick(true);
+    setLoc(ll.lat, ll.lng, 'picked on map'); addSheet.open();
   });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && quick) dismissQuick(); });
 
   const STORAGE_KEY = 'shanghai-eats-user-places';
 

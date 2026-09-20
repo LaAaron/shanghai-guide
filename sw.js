@@ -5,8 +5,8 @@
  * file never re-downloads the 9 MB of map data. The app always opens from the cache first and never waits on the
  * network, so a blocked or slow host (e.g. in mainland China) changes nothing: you keep the version you have.
  */
-const VERSION = 'fe680e10';
-const ASSETS = [["index.html", "a5b96ca8ac58", 11567], ["app.css", "531f8f126963", 31849], ["app.js", "14f5924464da", 67974], ["pwa.js", "e8a289107c5d", 4261], ["manifest.webmanifest", "8fa634652291", 705], ["vendor/leaflet.css", "be951f3a2ed0", 14165], ["vendor/leaflet.js", "db49d009c841", 147552], ["data/places.js", "05d0108d6620", 23949], ["data/added.js", "29b1f1cf59c0", 142], ["data/geo.js", "ac777901b032", 53153], ["data/labels.js", "1cc6ba8c4cff", 44512], ["data/tiles.js", "588847a63a65", 8847460], ["icons/apple-touch-icon.png", "c6dc8029e460", 7655], ["icons/icon-192.png", "6e296b8f6ce4", 8550], ["icons/icon-512.png", "656714bb2bbd", 23228], ["icons/icon-maskable-512.png", "ebf7c6fe2f4d", 19811], ["icons/icon.svg", "49de1d619a37", 693]];                       // [path, fingerprint, bytes]
+const VERSION = '48e34b76';
+const ASSETS = [["index.html", "a5b96ca8ac58", 11567], ["app.css", "adc45ffa7422", 33464], ["app.js", "2d8fe5202174", 70869], ["pwa.js", "e8a289107c5d", 4261], ["manifest.webmanifest", "8fa634652291", 705], ["vendor/leaflet.css", "be951f3a2ed0", 14165], ["vendor/leaflet.js", "db49d009c841", 147552], ["data/places.js", "05d0108d6620", 23949], ["data/added.js", "29b1f1cf59c0", 142], ["data/geo.js", "ac777901b032", 53153], ["data/labels.js", "1cc6ba8c4cff", 44512], ["data/tiles.js", "588847a63a65", 8847460], ["icons/apple-touch-icon.png", "c6dc8029e460", 7655], ["icons/icon-192.png", "6e296b8f6ce4", 8550], ["icons/icon-512.png", "656714bb2bbd", 23228], ["icons/icon-maskable-512.png", "ebf7c6fe2f4d", 19811], ["icons/icon.svg", "49de1d619a37", 693]];                       // [path, fingerprint, bytes]
 const CACHE = 'sg-assets';
 const SCOPE = self.registration.scope;
 const url = p => new URL(p, SCOPE).href;
