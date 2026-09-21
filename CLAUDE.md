@@ -11,11 +11,11 @@ Offline map + food guide, a static PWA on GitHub Pages: https://laaaron.github.i
 
 ## Layout
 - `index.html`, `app.css`, `app.js`, `pwa.js`, `sw.js` (generated), `manifest.webmanifest`, `vendor/leaflet.*` (bundled; nothing may load from the internet at runtime: it must work offline in mainland China).
-- `data/guides.js` lists the guides (switcher when 2+). The Shanghai guide is `data/places.js` (categories + 88 seed spots), `data/added.js` (spots added later), `data/geo.js`, `data/labels.js`, `data/tiles.js` (8.6 MB of map tiles). `data/photos.js` + `photos/` are shared photos (global).
+- `data/guides.js` lists the guides (title becomes a switcher when there are 2+): Shanghai and Shenzhen. `guides/shenzhen/` holds the Shenzhen guide (centre Futian; map tiles drawn from Overture Maps by `tools/mapbuild/`, see its README; no road/area name labels yet). The Shanghai guide is `data/places.js` (categories + 88 seed spots), `data/added.js` (spots added later), `data/geo.js`, `data/labels.js`, `data/tiles.js` (8.6 MB of map tiles). `data/photos.js` + `photos/` are shared photos (global).
 - `tools/stamp.py` (fingerprints + service worker, run before every commit), `tools/inbox.py` (validates app submissions), `tools/dev.command` / `tools/dev.py` (live-reload preview on the Mac and in the iPhone simulator, http://localhost:8790).
 
 ## Traps
 - Basemap tiles and pins are GCJ-02 (China's offset system); OpenStreetMap and phone GPS are WGS-84. Convert with `wgs2gcj` in `app.js` (skips points outside China). Mixing them puts things ~500 m off.
-- Road/area labels and detailed tiles only cover about 1 km around the original 88 spots; spots elsewhere get the coarse map.
+- Shanghai's road/area labels and detailed tiles only cover about 1 km around the original 88 spots; spots elsewhere get the coarse map. Shenzhen has detailed tiles only around Futian (about 4 km across) and no name labels yet; more detail is built around its spots when they are known. The original Shanghai tile generator no longer exists.
 - Existing spots' pins cannot be moved from inside the app; change coordinates in the data file.
 - Testing: the dev server disables the service worker; test offline/update behaviour on the live URL. `xcrun` needs `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`; Device Hub replaces Simulator.app.

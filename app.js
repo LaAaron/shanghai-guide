@@ -184,7 +184,9 @@
     if (visibleCount.nextSibling) visibleCount.nextSibling.textContent = filtered.length === 1 ? ' spot' : ' spots';
 
     if (filtered.length === 0){
-      listPane.innerHTML = '<div class="empty-msg">Nothing matches those filters.<br><button type="button" class="dir-btn primary" data-act="reset">Clear filters</button></div>';
+      listPane.innerHTML = allPlaces().length
+        ? '<div class="empty-msg">Nothing matches those filters.<br><button type="button" class="dir-btn primary" data-act="reset">Clear filters</button></div>'
+        : '<div class="empty-msg">No spots in the ' + esc(GUIDE.subtitle) + ' yet.<br>Tap <b>+</b> to add the first one, or hold the map where you want it.</div>';
       return;
     }
 

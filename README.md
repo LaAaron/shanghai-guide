@@ -16,6 +16,7 @@ An offline-first map and food guide. Static files only — no server, no build s
 - `data/` — the Shanghai guide: spots (`places.js`), metro + district shapes (`geo.js`), road and area names (`labels.js`), map tiles (`tiles.js`, 8.6 MB). `data/guides.js` lists the guides in the app.
 - `vendor/` — Leaflet 1.9.4, bundled so nothing loads from the internet
 - `sw.js` — service worker: saves every file on the phone and updates only the files that changed
+- `guides/shenzhen/` — the Shenzhen guide's data; `tools/mapbuild/` — scripts that build a guide's map (see its README)
 - `tools/inbox.py` — the GitHub job that turns app submissions into data (run locally with `python3 tools/inbox.py local spot LaAaron < body.txt`)
 - `tools/stamp.py` — run `python3 tools/stamp.py` after editing any file, then push. It refreshes `sw.js` so phones know what changed.
 
