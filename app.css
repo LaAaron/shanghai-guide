@@ -315,7 +315,7 @@
   /* Popups */
   .leaflet-popup-content-wrapper{
     background:var(--surface) !important; color:var(--label) !important;
-    border-radius:16px !important; padding:0 !important;
+    border-radius:16px !important; padding:0 !important; overflow:hidden;      /* clips a photo that runs edge to edge */
     box-shadow:var(--shadow-pop), 0 0 0 .5px var(--sep) !important;
   }
   .leaflet-popup-content{ margin:0 !important; padding:16px 18px 16px; font:14px/1.4 var(--font) !important; }
@@ -607,8 +607,8 @@
     display:grid; place-items:center; font-size:12px; font-weight:600; color:#fff; background:rgba(40,30,22,.55);
     -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
   }
-  .pp-cover{ margin:-16px -18px 10px; width:calc(100% + 36px); aspect-ratio:16/9; border-radius:0; box-shadow:none; }
-  .leaflet-popup-content .pp-cover{ border-radius:0; }
+  .pp-cover{ margin:-16px -18px 10px; width:calc(100% + 36px); aspect-ratio:16/9; border-radius:16px 16px 0 0; box-shadow:none; }
+  .leaflet-popup-content .pp-cover{ border-radius:16px 16px 0 0; }
   .dir-btn.ph-btn{ display:inline-flex; align-items:center; gap:5px; }
   .dir-btn.ph-btn svg{ width:17px; height:17px; }
   .dir-btn.ph-btn.icon{ width:34px; padding:0; justify-content:center; }
