@@ -37,7 +37,7 @@ class Layer:
 
 class Data:
     def __init__(self, path):
-        d = pickle.load(open(path, 'rb'))
+        d = path if isinstance(path, dict) else pickle.load(open(path, 'rb'))
         self.buildings = Layer(load_wkb(d['buildings']))
         self.water = Layer(load_wkb(d['water']), [r[1] for r in d['water']])
         self.land = Layer(load_wkb(d['land']), [r[1] for r in d['land']])
