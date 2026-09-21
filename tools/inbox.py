@@ -78,13 +78,25 @@ def who(raw, user):
 
 
 # ---------------------------------------------------------------- data files
-def load_added():
-    mm = re.search(r'SG\.ADDED_PLACES = (\[.*\]);', rd('data/added.js'), re.S)
+def guides():
+    mm = re.search(r'SG\.GUIDES = (\[.*\]);', rd('data/guides.js'), re.S)
+    return json.loads(mm.group(1))
+
+def guide_of(raw):
+    """Which guide a submission is for (older app versions send none: the first guide)."""
+    gs, gid = guides(), raw.get('guide', None)
+    if gid is None: return gs[0]
+    g = next((g for g in gs if g['id'] == gid), None)
+    if not isinstance(gid, str) or g is None: raise Done('rejected', 'Unknown guide. Expected one of: %s.' % ', '.join(g['id'] for g in gs))
+    return g
+
+def load_added(g=None):
+    mm = re.search(r'SG\.ADDED_PLACES = (\[.*\]);', rd((g or guides()[0])['added']), re.S)
     return json.loads(mm.group(1)) if mm else []
 
-def save_added(added):
+def save_added(added, g=None):
     body = ',\n'.join(' ' + json.dumps(a, ensure_ascii=False, separators=(',', ':')) for a in added)
-    wr('data/added.js', '/* Spots added through the app and approved by tools/inbox.py. Do not edit by hand. */\nwindow.SG = window.SG || {};\nSG.ADDED_PLACES = [\n' + body + '\n];\n')
+    wr((g or guides()[0])['added'], '/* Spots added through the app and approved by tools/inbox.py. Do not edit by hand. */\nwindow.SG = window.SG || {};\nSG.ADDED_PLACES = [\n' + body + '\n];\n')
 
 def load_photos():
     mm = re.search(r'SG\.PHOTOS = (\{.*\});', rd('data/photos.js'), re.S)
@@ -94,15 +106,20 @@ def save_photos(d):
     wr('data/photos.js', '/* Photos shared through the app and approved by tools/inbox.py (files are in photos/). Do not edit by hand. */\n'
        'window.SG = window.SG || {};\nSG.PHOTOS = ' + json.dumps(d, ensure_ascii=False, indent=1, sort_keys=True) + ';\n')
 
+def seed_ids(g): return set(re.findall(r'id:"([^"]+)"', rd(g['places'])))
+
 def known_spot_ids():
-    return set(re.findall(r'id:"([^"]+)"', rd('data/places.js'))) | {a.get('id') for a in load_added()}
+    ids = set()
+    for g in guides(): ids |= seed_ids(g) | {a.get('id') for a in load_added(g)}
+    return ids
 
 
 # ---------------------------------------------------------------- [new-spot]
 def handle_spot(user, body, created=None):
     check_user(user)
     raw = json_block(body, 20000)
-    cats = re.findall(r'^\s+(\w+):\s*\{\s*label', rd('data/places.js'), re.M)
+    g = guide_of(raw)
+    cats = re.findall(r'^\s+(\w+):\s*\{\s*label', rd(g['places']), re.M)
     spot = {}
     spot['id'] = ident(raw, 'id')
     spot['name'] = text(raw, 'name', 80, True)
@@ -117,19 +134,21 @@ def handle_spot(user, body, created=None):
     if lat is not None:
         if isinstance(lat, bool) or isinstance(lng, bool) or not isinstance(lat, (int, float)) or not isinstance(lng, (int, float)):
             raise Done('rejected', 'Latitude and longitude must be numbers.')
-        if not (30.4 <= lat <= 32.0 and 120.6 <= lng <= 122.4): raise Done('rejected', 'Those coordinates are outside the Shanghai area this guide covers.')
+        a = g['area']
+        if not (a['latMin'] <= lat <= a['latMax'] and a['lngMin'] <= lng <= a['lngMax']): raise Done('rejected', 'Those coordinates are outside the %s area this guide covers.' % g['place'])
         lat, lng = round(float(lat), 6), round(float(lng), 6)
     spot['lat'], spot['lng'] = lat, lng
     spot['approx'] = raw.get('approx') is True            # only a real boolean; anything else means "exact"
     spot['by'] = who(raw, user)
     spot['at'] = datetime.date.today().isoformat()
 
-    seed_ids = set(re.findall(r'id:"([^"]+)"', rd('data/places.js')))
-    added = load_added()
-    if spot['id'] in seed_ids: raise Done('rejected', 'That id clashes with a built-in spot.')
+    for other in guides():
+        if spot['id'] in seed_ids(other): raise Done('rejected', 'That id clashes with a built-in spot.')
+        if other['id'] != g['id'] and any(a.get('id') == spot['id'] for a in load_added(other)): raise Done('rejected', 'That id clashes with a spot in another guide.')
+    added = load_added(g)
     if any(a.get('id') == spot['id'] for a in added): raise Done('duplicate', '"%s" is already in the guide, nothing changed.' % spot['name'], spot['name'])
     added.append(spot)
-    save_added(added)
+    save_added(added, g)
     raise Done('added', 'Added "%s". It will be live in about a minute; open the app while online and tap "Update ready".' % spot['name'], spot['name'])
 
 

@@ -13,11 +13,14 @@
 An offline-first map and food guide. Static files only — no server, no build step.
 
 - `index.html`, `app.css`, `app.js` — the app
-- `data/` — the spots (`places.js`), metro + district shapes (`geo.js`), road and area names (`labels.js`), map tiles (`tiles.js`, 8.6 MB)
+- `data/` — the Shanghai guide: spots (`places.js`), metro + district shapes (`geo.js`), road and area names (`labels.js`), map tiles (`tiles.js`, 8.6 MB). `data/guides.js` lists the guides in the app.
 - `vendor/` — Leaflet 1.9.4, bundled so nothing loads from the internet
 - `sw.js` — service worker: saves every file on the phone and updates only the files that changed
 - `tools/inbox.py` — the GitHub job that turns app submissions into data (run locally with `python3 tools/inbox.py local spot LaAaron < body.txt`)
 - `tools/stamp.py` — run `python3 tools/stamp.py` after editing any file, then push. It refreshes `sw.js` so phones know what changed.
+
+## More than one guide
+`data/guides.js` lists the guides. With two or more, the title in the app becomes a switcher (tap it). Each guide names its own data files (spots, `added.js`, metro/district shapes, road/area labels, map tiles), its centre and zoom, the area it covers (also used to check submissions), and whether it is in mainland China (map coordinates in China are GCJ-02 and directions offer AMap). Only the chosen guide's files are loaded, but all guides are saved for offline use. To add one: put its data files in `guides/<id>/` in the same format as `data/`, add an entry to `data/guides.js`, run `python3 tools/stamp.py`, push. Spots added in the app are filed for the guide being shown; photos are shared across guides.
 
 ## Adding spots and photos (for the two of us)
 Tap **+** to add a spot, or the camera button on any spot to add photos (take one, or choose from your library). Everything is saved on the phone first, so it works offline.

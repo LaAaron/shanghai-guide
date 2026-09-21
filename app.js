@@ -1,5 +1,8 @@
 (function(){
   const { CATEGORIES, SEED_PLACES, METRO_STATIONS, MAP_TILES, SH_DISTRICTS, ROAD_NAMES, ROAD_POLYS, AREAS } = window.SG;
+  const GUIDES = window.SG.GUIDES;
+  const GUIDE = window.SG.GUIDE || GUIDES[0];                   // the guide being shown (index.html loaded only its data files)
+  const inThisGuide = p => (p.guide || GUIDES[0].id) === GUIDE.id;     // spots saved before guides existed belong to the first guide
   const ADDED_PLACES = window.SG.ADDED_PLACES || [];      // spots added through the app and approved (data/added.js)
   const SHARED_PHOTOS = window.SG.PHOTOS || {};             // photos shared with everyone (data/photos.js, files in photos/)
   const SHARE_REPO = 'LaAaron/shanghai-guide';
@@ -56,7 +59,7 @@
 
   const sharedIds = new Set(ADDED_PLACES.map(p => p.id));
   // built-in spots + spots shared by anyone in the group + spots saved only on this phone (until they arrive as shared)
-  function allPlaces(){ return SEED_PLACES.concat(ADDED_PLACES, userPlaces.filter(p => !sharedIds.has(p.id))); }
+  function allPlaces(){ return SEED_PLACES.concat(ADDED_PLACES, userPlaces.filter(p => inThisGuide(p) && !sharedIds.has(p.id))); }
   function districts(){ return Array.from(new Set(allPlaces().map(p => p.district))).sort(); }
   function findPlace(id){ return allPlaces().find(x => x.id === id); }
 
@@ -365,7 +368,7 @@
       if (mapDiv) mapDiv.innerHTML = '<div class="map-fail">The map couldn’t load. This usually means the device is offline or an ad-blocker is blocking the map script. The list still works.</div>';
       return;
     }
-    map = L.map('map', { zoomControl: false, attributionControl:false, zoomSnap:0, zoomDelta:1, minZoom:9, maxZoom:17, tap:true, preferCanvas:true, zoomAnimationThreshold:6, scrollWheelZoom:false, fadeAnimation:false, bounceAtZoomLimits:false }).setView([31.2304, 121.4737], 12);
+    map = L.map('map', { zoomControl: false, attributionControl:false, zoomSnap:0, zoomDelta:1, minZoom:9, maxZoom:17, tap:true, preferCanvas:true, zoomAnimationThreshold:6, scrollWheelZoom:false, fadeAnimation:false, bounceAtZoomLimits:false }).setView(GUIDE.center, GUIDE.zoom);
     L.control.zoom({ position:'topright' }).addTo(map);
     map.createPane('basePane'); map.getPane('basePane').style.zIndex = 150;
     const geo = L.geoJSON(SH_DISTRICTS, {
@@ -512,7 +515,7 @@
     //  * roads and rivers: rotated to the road's own angle and centred ON its line, only where the road is
     //    straight and nothing crosses or joins it under the text, repeated periodically along the road
     // Road/area geometry is OpenStreetMap data converted to the basemap's coordinate system (GCJ-02).
-    const LAT0 = 31.22, LNG0 = 121.47, KY = 110860, KX = 111320 * Math.cos(LAT0 * Math.PI / 180);
+    const LAT0 = GUIDE.center[0], LNG0 = GUIDE.center[1], KY = 110860, KX = 111320 * Math.cos(LAT0 * Math.PI / 180);
     const POLYS = ROAD_POLYS.map((r, id) => {
       const c = r[2], n = c.length / 2, lat = new Float64Array(n), lng = new Float64Array(n), x = new Float64Array(n), y = new Float64Array(n), cum = new Float64Array(n);
       let a = 0, b = 0, s = 90, w = 180, nn = -90, e = -180;
@@ -722,7 +725,8 @@
       $('map').classList.toggle('hide-districts', z >= 13);
     };
     map.on('zoomend', zoomStyle); zoomStyle();
-    map.setMaxBounds(geo.getBounds().pad(0.2));
+    const gb = geo.getBounds(), ar = GUIDE.area;                          // keep panning near the guide: its district shapes, else its area box
+    map.setMaxBounds((gb.isValid() ? gb : L.latLngBounds([ar.latMin, ar.lngMin], [ar.latMax, ar.lngMax])).pad(0.2));
     $('fit-btn').addEventListener('click', fitVisible);
     map.on('click', e => { if (picking) movePicker(e.latlng); });
     map.createPane('pickPane').style.zIndex = 680;                        // above pins, name labels and district labels
@@ -819,7 +823,7 @@
 
   function stationPlace(id){
     const i = +id.slice(3), st = METRO_STATIONS[i];
-    return st ? { id, name: st[0] + ' Station', zh: '', addr: 'Shanghai Metro station', lat: st[1], lng: st[2], district: 'Metro', searchName: st[0] + ' 地铁站' } : null;
+    return st ? { id, name: st[0] + ' Station', zh: '', addr: GUIDE.place + ' Metro station', lat: st[1], lng: st[2], district: 'Metro', searchName: st[0] + ' 地铁站' } : null;
   }
   function findAny(id){
     return String(id).startsWith('st:') ? stationPlace(id) : findPlace(id);
@@ -863,6 +867,9 @@
     if (dirFrom.value === '__text') fromText = dirFromText.value.trim();
     else if (dirFrom.value !== '__here') from = findAny(dirFrom.value);
 
+    const chinaMaps = GUIDE.china !== false;                       // AMap (and its advice about VPNs) only makes sense in mainland China
+    $('lnk-amap-search').hidden = !chinaMaps;
+    const gnote = $('lnk-google').querySelector('small'); if (gnote) gnote.hidden = !chinaMaps;
     const amapMode = { walk:'walk', transit:'bus', drive:'car', bike:'ride' }[dirMode];
     const appleMode = { walk:'w', transit:'r', drive:'d', bike:'w' }[dirMode];
     const gMode = { walk:'walking', transit:'transit', drive:'driving', bike:'bicycling' }[dirMode];
@@ -876,14 +883,15 @@
       amap.href = u; amap.hidden = false;
       amap.querySelector('.lbl').textContent = fromText ? '高德 AMap · directions (uses current location)' : '高德 AMap · directions';
     } else { amap.hidden = true; }
+    if (!chinaMaps) amap.hidden = true;
     $('lnk-amap-search').href =
-      'https://uri.amap.com/search?keyword=' + q(p.searchName || p.zh || p.name) + '&city=310000&callnative=1&src=shanghai-guide';
+      'https://uri.amap.com/search?keyword=' + q(p.searchName || p.zh || p.name) + '&city=' + (GUIDE.amapCity || '') + '&callnative=1&src=shanghai-guide';
 
-    const dest = has ? (p.lat + ',' + p.lng) : (p.addr || p.name) + ', Shanghai';
+    const dest = has ? (p.lat + ',' + p.lng) : (p.addr || p.name) + ', ' + GUIDE.place;
     let apple = 'https://maps.apple.com/?daddr=' + q(dest) + '&dirflg=' + appleMode;
     let google = 'https://www.google.com/maps/dir/?api=1&destination=' + q(dest) + '&travelmode=' + gMode;
     if (from){ apple += '&saddr=' + from.lat + ',' + from.lng; google += '&origin=' + from.lat + ',' + from.lng; }
-    else if (fromText){ apple += '&saddr=' + q(fromText + ', Shanghai'); google += '&origin=' + q(fromText + ', Shanghai'); }
+    else if (fromText){ apple += '&saddr=' + q(fromText + ', ' + GUIDE.place); google += '&origin=' + q(fromText + ', ' + GUIDE.place); }
     $('lnk-apple').href = apple;
     $('lnk-google').href = google;
   }
@@ -932,7 +940,7 @@
   function syncTyped(){
     const lat = parseFloat($('f-lat').value), lng = parseFloat($('f-lng').value);
     if (isFinite(lat) && isFinite(lng)){
-      if (!inArea(lat, lng)) showLoc('That’s outside the Shanghai area this guide covers.', 'err');
+      if (!inArea(lat, lng)) showLoc('That’s outside the ' + GUIDE.place + ' area this guide covers.', 'err');
       else showLoc(lat.toFixed(5) + ', ' + lng.toFixed(5) + ' · typed', 'ok');
     } else showLoc('No location yet');
   }
@@ -943,7 +951,7 @@
     showLoc('Finding you…');
     navigator.geolocation.getCurrentPosition(pos => {
       const g = wgs2gcj(pos.coords.latitude, pos.coords.longitude);
-      if (!inArea(g[0], g[1])){ showLoc('You’re not in Shanghai right now, so your location can’t be used for this spot. Use “Pick on map” instead.', 'err'); return; }
+      if (!inArea(g[0], g[1])){ showLoc('You’re not in ' + GUIDE.place + ' right now, so your location can’t be used for this spot. Use “Pick on map” instead.', 'err'); return; }
       setLoc(g[0], g[1], 'my location (±' + Math.round(pos.coords.accuracy) + ' m)');
       if (map) map.setView(g, Math.max(map.getZoom(), 16), { animate:false });
     }, err => {
@@ -1032,7 +1040,7 @@
     if (!name) return;
     const lat = parseFloat($('f-lat').value);
     const lng = parseFloat($('f-lng').value);
-    if (isFinite(lat) && isFinite(lng) && !inArea(lat, lng)){ showLoc('That’s outside the Shanghai area this guide covers, so it can’t be pinned. Pick a spot on the map instead.', 'err'); return; }
+    if (isFinite(lat) && isFinite(lng) && !inArea(lat, lng)){ showLoc('That’s outside the ' + GUIDE.place + ' area this guide covers, so it can’t be pinned. Pick a spot on the map instead.', 'err'); return; }
     const place = {
       id: 'u-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8),
       name: name,
@@ -1044,7 +1052,8 @@
       lat: isFinite(lat) ? lat : null,
       lng: isFinite(lng) ? lng : null,
       approx: false,
-      userAdded: true
+      userAdded: true,
+      guide: GUIDE.id
     };
     userPlaces.push(place);
     await saveUserPlaces();
@@ -1057,7 +1066,7 @@
 
   /* ---------- Where am I: a live "you are here" dot. GPS needs no internet, so this works offline in China ---------- */
   const toast = (msg, opts) => { if (window.sgToast) window.sgToast(msg, opts); };
-  const AREA = { latMin:30.4, latMax:32.0, lngMin:120.6, lngMax:122.4 };            // the Shanghai area this guide covers
+  const AREA = GUIDE.area;                                                            // the area this guide covers
   const inArea = (lat, lng) => lat >= AREA.latMin && lat <= AREA.latMax && lng >= AREA.lngMin && lng <= AREA.lngMax;
   let me = null, watchId = null, meMarker = null, meCircle = null, meDemo = false, sortNearest = false, lastSortPos = null, geoNoteShown = false;
 
@@ -1117,7 +1126,7 @@
   }
   function onFix(pos){
     const g = wgs2gcj(pos.coords.latitude, pos.coords.longitude);          // GPS reports plain WGS-84; the map is GCJ-02
-    if (!inArea(g[0], g[1])){ stopLocate(true); notInShanghai(); return; }
+    if (!inArea(g[0], g[1])){ stopLocate(true); notInGuideArea(); return; }
     const first = !me;
     me = { lat:g[0], lng:g[1], acc:pos.coords.accuracy || 30, demo:false };
     setLocateState('on');
@@ -1138,16 +1147,16 @@
     setLocateState('locating');
     watchId = navigator.geolocation.watchPosition(onFix, onGeoError, { enableHighAccuracy:true, maximumAge:5000, timeout:30000 });
   }
-  function notInShanghai(){
-    toast('You’re not in Shanghai right now, so there’s nothing to show yet. Try a demo to see how it will look.', { action:'Try demo', ms:12000, onAction: startDemo });
+  function notInGuideArea(){
+    toast('You’re not in ' + GUIDE.place + ' right now, so there’s nothing to show yet. Try a demo to see how it will look.', { action:'Try demo', ms:12000, onAction: startDemo });
   }
   function startDemo(){
-    const st = METRO_STATIONS.find(s => s[0] === "People's Square") || METRO_STATIONS[0];
+    const d = GUIDE.demo;
     stopLocate(false);
-    me = { lat:st[1], lng:st[2], acc:25, demo:true };
+    me = { lat:d[0], lng:d[1], acc:25, demo:true };
     setLocateState('on');
     afterFix(true);
-    toast('Demo location: People’s Square. Tap the arrow twice to switch it off.', { ms:6000 });
+    toast('Demo location: ' + d[2] + '. Tap the arrow twice to switch it off.', { ms:6000 });
   }
   function toggleNearest(){
     if (sortNearest){ sortNearest = false; buildChips(); renderList(); return; }
@@ -1540,8 +1549,8 @@
 
   async function sendSpots(){
     for (const p of userPlaces.slice()){
-      if (sharedIds.has(p.id) || p.issue || p.rejected) continue;
-      const n = await postIssue('[new-spot] ' + p.name, { id:p.id, name:p.name, zh:p.zh || '', cat:p.cat, district:p.district || '', addr:p.addr || '', note:p.note || '', lat:p.lat, lng:p.lng, approx:!!p.approx });
+      if (!inThisGuide(p) || sharedIds.has(p.id) || p.issue || p.rejected) continue;
+      const n = await postIssue('[new-spot] ' + p.name, { guide:GUIDE.id, id:p.id, name:p.name, zh:p.zh || '', cat:p.cat, district:p.district || '', addr:p.addr || '', note:p.note || '', lat:p.lat, lng:p.lng, approx:!!p.approx });
       p.issue = n; p.sentAt = Date.now(); syncTouched = true; await saveUserPlaces(); await wait(1500);
     }
   }
@@ -1570,7 +1579,7 @@
   // did the guide accept what we sent? (issues closed as "not planned" were refused, and the reply says why)
   async function checkSent(){
     const items = [];
-    userPlaces.forEach(p => { if (p.issue && !sharedIds.has(p.id) && !p.rejected && !p.closed) items.push({ obj:p, n:p.issue, at:p.sentAt, save:saveUserPlaces }); });
+    userPlaces.forEach(p => { if (inThisGuide(p) && p.issue && !sharedIds.has(p.id) && !p.rejected && !p.closed) items.push({ obj:p, n:p.issue, at:p.sentAt, save:saveUserPlaces }); });
     Object.values(photosBySpot).flat().forEach(r => { if (r.sent && !sharedPhotoIds.has(r.id) && !r.rejected && !r.closed) items.push({ obj:r, n:r.sent, at:r.sentAt, save:() => putRec(r) }); });
     for (const it of items){
       if (Date.now() - (it.at || 0) < 90000) continue;
@@ -1586,7 +1595,7 @@
   }
 
   function pendingCounts(){
-    const spots = userPlaces.filter(p => !sharedIds.has(p.id) && !p.issue && !p.rejected).length;
+    const spots = userPlaces.filter(p => inThisGuide(p) && !sharedIds.has(p.id) && !p.issue && !p.rejected).length;
     const photos = Object.entries(photosBySpot).reduce((n, [spot, l]) => {
       const mine = userPlaces.find(x => x.id === spot);
       if (mine && mine.rejected) return n;
@@ -1597,7 +1606,7 @@
   }
   // sent, but the guide has not answered yet: keep checking now and then
   function awaitingAnswer(){
-    return userPlaces.some(p => p.issue && !sharedIds.has(p.id) && !p.rejected && !p.closed) ||
+    return userPlaces.some(p => inThisGuide(p) && p.issue && !sharedIds.has(p.id) && !p.rejected && !p.closed) ||
       Object.values(photosBySpot).flat().some(r => r.sent && !sharedPhotoIds.has(r.id) && !r.rejected && !r.closed);
   }
   const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
@@ -1695,14 +1704,32 @@
     setInterval(() => { if (!document.hidden && due()) syncNow(); }, 45000);
   }
 
+  /* ---------- Guide title and switcher ---------- */
+  function setupGuideTitle(){
+    const h1 = document.querySelector('.title-row h1'), sp = h1.querySelector('span');
+    h1.firstChild.nodeValue = GUIDE.title; sp.textContent = GUIDE.subtitle;
+    document.title = GUIDE.title + ' · ' + GUIDE.subtitle;
+    if (GUIDES.length < 2) return;
+    h1.classList.add('has-switch'); h1.setAttribute('role', 'button'); h1.tabIndex = 0;
+    h1.setAttribute('aria-haspopup', 'menu'); h1.setAttribute('aria-label', GUIDE.subtitle + '. Switch guide');
+    sp.insertAdjacentHTML('afterend', '<i class="gs-chev">' + CHEVRON_SVG + '</i>');
+    const open = () => showMenu(GUIDES.map(g => ({
+      label: (g.id === GUIDE.id ? '✓  ' : '') + g.title + '  ·  ' + g.subtitle,
+      run: () => { if (g.id === GUIDE.id) return; lsSet('sg-guide', g.id); location.reload(); }
+    })));
+    h1.addEventListener('click', open);
+    h1.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); open(); } });
+  }
+
   async function boot(){
+    setupGuideTitle();
     syncChrome();
     new ResizeObserver(syncChrome).observe(header);
     new ResizeObserver(syncChrome).observe(tabbar);
     try{
       initMap();
     } catch(err){
-      console.error('Map failed to load', err);
+      console.error('Map failed to load: ' + (err && err.stack ? err.stack : err));
     }
     try{
       await loadUserPlaces();

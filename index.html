@@ -282,12 +282,18 @@
 </div>
 
 <script src="vendor/leaflet.js"></script>
-<script src="data/places.js"></script>
-<script src="data/added.js"></script>
+<script src="data/guides.js"></script>
+<script>
+/* load the data files of the chosen guide (saved by the switcher), before the app starts */
+(function(){
+  var gs = SG.GUIDES, id = null;
+  try { id = localStorage.getItem('sg-guide'); } catch (e) {}
+  var g = gs.filter(function(x){ return x.id === id; })[0] || gs[0];
+  SG.GUIDE = g;
+  g.files.forEach(function(f){ document.write('<script src="' + f + '"><\/script>'); });
+})();
+</script>
 <script src="data/photos.js"></script>
-<script src="data/geo.js"></script>
-<script src="data/labels.js"></script>
-<script src="data/tiles.js"></script>
 <script src="app.js"></script>
 <script src="pwa.js"></script>
 </body>
