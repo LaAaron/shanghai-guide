@@ -1,6 +1,6 @@
 # Shanghai Guide — notes for Claude Code sessions
 
-Offline map + food guide, a static PWA on GitHub Pages: https://laaaron.github.io/shanghai-guide/ (repo `LaAaron/shanghai-guide`, branch `main`). No build step. The two users are Aaron (`LaAaron`) and Riya (`RiyaLaGivane`); the app is for a trip to Shanghai.
+Offline map + food guide, a static PWA on GitHub Pages: https://laaaron.github.io/shanghai-guide/ (repo `LaAaron/shanghai-guide`, branch `main`). No build step. The two users are Aaron (`LaAaron`) and Riya (`RiyaLaGivane`, invited as a collaborator 2026-09-26); the app is for a trip to Shanghai.
 
 ## How changes reach the live app
 - Live app = this repo. A claude.ai chat or artifact is NOT connected to it (the old artifact at claude.ai/artifact/L4rz7xUSab23Z3zZMCNcmt is a dead copy).
