@@ -25,6 +25,16 @@ ask APIFY_TOKEN "Apify API token (starts with apify_api_). Needed for Instagram/
 .venv/bin/python server.py --port "$PORT" &
 SERVER=$!
 trap 'kill $SERVER 2>/dev/null; exit 0' INT TERM EXIT
-sleep 1
-open "http://localhost:$PORT/"
+URL="http://127.0.0.1:$PORT/"
+echo "Starting the extractor (the first start can take up to a minute)…"
+for i in $(seq 1 120); do                 # wait until the server answers, or stop if it crashed
+  curl -s -o /dev/null "${URL}api/status" && break
+  if ! kill -0 $SERVER 2>/dev/null; then echo; echo "The extractor stopped before it could start. The error is shown above."; exit 1; fi
+  sleep 0.5
+done
+if curl -s -o /dev/null "${URL}api/status"; then
+  echo "Ready: $URL"; open "$URL"
+else
+  echo "The extractor has not answered after 60 seconds. Anything above this line is from it."
+fi
 wait $SERVER

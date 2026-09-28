@@ -53,7 +53,7 @@ def main():
     ap.add_argument('--port', type=int, default=8791)
     a = ap.parse_args()
     srv = http.server.ThreadingHTTPServer(('127.0.0.1', a.port), Handler)
-    print('Extractor test page: http://localhost:%d   (Ctrl-C to stop)' % a.port)
+    print('Extractor test page: http://127.0.0.1:%d   (Ctrl-C to stop)' % a.port)
     for k, v in (('ANTHROPIC_API_KEY', 'Claude'), ('APIFY_TOKEN', 'Apify')):
         if not os.environ.get(k): print('  note: %s is not set, so %s calls will fail. See extractor/README.md.' % (k, v))
     try: srv.serve_forever()
