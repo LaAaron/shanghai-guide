@@ -4,11 +4,12 @@
     python3 extractor/server.py [--port 8791]        then open http://localhost:8791
 
 Only listens on this computer (127.0.0.1). POST /api/extract {"url": "...", "render": false} returns the same JSON as
-`extract.py --json`; GET /api/status says which keys are set (never their values).
+`extract.py --json`; GET /api/status checks that each key works (never shows the keys).
 """
 import argparse, http.server, json, os, sys, traceback
 
 import extract
+import keys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -27,7 +28,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path in ('/', '/index.html'):
             self.send(200, open(os.path.join(HERE, 'test.html'), 'rb').read(), 'text/html; charset=utf-8')
         elif self.path == '/api/status':
-            self.send(200, {'anthropic': bool(os.environ.get('ANTHROPIC_API_KEY')), 'apify': bool(os.environ.get('APIFY_TOKEN')),
+            self.send(200, {'keys': keys.check_all(),
                             'guides': [{'id': g['id'], 'place': g['place'], 'amapCity': g.get('amapCity')} for g in extract.guide.guides()],
                             'categories': extract.guide.categories()})
         else:

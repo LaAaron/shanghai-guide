@@ -4,10 +4,12 @@ A frame is taken every FRAME_EVERY seconds (default 1.5), shrunk so its long sid
 200 tokens each), and skipped if it looks almost the same as the last frame kept. Long videos are sampled more thinly so
 there are never more than MAX_FRAMES frames.
 """
-import os, urllib.request
+import os
 
 import cv2
 import numpy as np
+
+import sources
 
 FRAME_EVERY = float(os.environ.get('FRAME_EVERY', 1.5))
 FRAME_SIZE = int(os.environ.get('FRAME_SIZE', 512))
@@ -63,8 +65,7 @@ def photos(urls):
     """[jpeg bytes] for photo posts and slideshows."""
     out = []
     for u in urls[:MAX_PHOTOS]:
-        req = urllib.request.Request(u, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=60) as r: data = r.read(30_000_000)
+        data, _ = sources.get(sources.with_token(u), limit=30_000_000)
         img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
         if img is not None: out.append(jpeg(shrink(img, PHOTO_SIZE)))
     return out

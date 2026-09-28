@@ -19,7 +19,9 @@ def load_env():
     for ln in open(path, encoding='utf-8'):
         m = re.match(r'\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$', ln)
         if m and not ln.lstrip().startswith('#'):
-            os.environ.setdefault(m.group(1), m.group(2).strip('\'"'))
+            v = m.group(2).strip('\'"')
+            if m.group(1).endswith(('_KEY', '_TOKEN')): v = re.sub(r'\s+', '', v)     # a key never contains spaces
+            os.environ.setdefault(m.group(1), v)
 
 
 load_env()                                    # before the imports below: they read settings from the environment
@@ -42,7 +44,7 @@ def extract(url, render=False):
     finally:
         if src.video and os.path.exists(src.video): os.remove(src.video)
     if not src.parts and not shots and not photos:
-        raise RuntimeError('Found nothing to read at this link')
+        raise RuntimeError('Found nothing to read at this link' + (' (%s)' % '; '.join(src.warnings) if src.warnings else ''))
     raw, summary, usage = llm.extract(src, shots, photos, every)
     result = {
         'url': url, 'kind': src.kind, 'title': src.title, 'summary': summary,

@@ -3,7 +3,13 @@
 Every fetch returns a Source: some text (caption, transcript, page text, location tags) plus, for videos, a local video
 file, and for photo posts, image URLs. Apify actor names and inputs can be overridden in .env (see README).
 """
-import html.parser, json, os, re, tempfile, urllib.error, urllib.parse, urllib.request
+import html.parser, json, os, re, ssl, tempfile, urllib.error, urllib.parse, urllib.request
+
+try:                                    # Python on a Mac often has no certificates of its own; use certifi's (installed with anthropic)
+    import certifi
+    CTX = ssl.create_default_context(cafile=certifi.where())
+except ImportError:
+    CTX = None
 
 UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15'
 MAX_VIDEO_BYTES = 300_000_000
@@ -35,15 +41,21 @@ def kind_of(url):
 # ---------------------------------------------------------------- plain HTTP
 def get(url, headers=None, limit=None):
     req = urllib.request.Request(url, headers={'User-Agent': UA, 'Accept-Language': 'en,zh-CN;q=0.8', **(headers or {})})
-    with urllib.request.urlopen(req, timeout=60) as r:
+    with urllib.request.urlopen(req, timeout=60, context=CTX) as r:
         data = r.read(limit + 1 if limit else -1)
         if limit and len(data) > limit: raise ValueError('File is larger than %d MB' % (limit // 1_000_000))
         return data, r.headers
 
 
+def with_token(url):
+    """Apify URLs carry the token as ?token= (the method every Apify endpoint accepts)."""
+    token = os.environ.get('APIFY_TOKEN')
+    if not url.startswith(APIFY) or not token or 'token=' in url: return url
+    return url + ('&' if '?' in url else '?') + 'token=' + urllib.parse.quote(token)
+
+
 def download(url, suffix):
-    headers = {'Authorization': 'Bearer ' + os.environ['APIFY_TOKEN']} if url.startswith(APIFY) and os.environ.get('APIFY_TOKEN') else {}
-    data, _ = get(url, headers, MAX_VIDEO_BYTES)
+    data, _ = get(with_token(url), None, MAX_VIDEO_BYTES)
     fd, path = tempfile.mkstemp(suffix=suffix, prefix='sg-extract-')
     with os.fdopen(fd, 'wb') as f: f.write(data)
     return path
@@ -57,11 +69,11 @@ def apify(actor_env, default_actor, input_env, default_input):
     payload = default_input
     if os.environ.get(input_env):                             # extra/overriding input fields, as JSON
         payload = {**default_input, **json.loads(os.environ[input_env])}
-    url = '%s/acts/%s/run-sync-get-dataset-items?timeout=300' % (APIFY, actor.replace('/', '~'))
+    url = with_token('%s/acts/%s/run-sync-get-dataset-items?timeout=300' % (APIFY, actor.replace('/', '~')))
     req = urllib.request.Request(url, data=json.dumps(payload).encode(), method='POST',
                                  headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
     try:
-        with urllib.request.urlopen(req, timeout=330) as r: items = json.loads(r.read())
+        with urllib.request.urlopen(req, timeout=330, context=CTX) as r: items = json.loads(r.read())
     except urllib.error.HTTPError as e:
         raise RuntimeError('Apify (%s) said %d: %s' % (actor, e.code, e.read()[:400].decode('utf-8', 'replace')))
     items = [i for i in items if isinstance(i, dict) and not i.get('error')] if isinstance(items, list) else []

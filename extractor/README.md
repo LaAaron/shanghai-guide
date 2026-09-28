@@ -32,7 +32,9 @@ a test page and saved in `extractor/results/` for a later step.
    - asks for each key and saves it in `extractor/.env` (this file is never committed).
 3. It opens **http://localhost:8791**: paste links, one per line, and press **Extract places**.
 
-To change a key later, edit `extractor/.env` (copy `.env.example` for the layout).
+The test page checks both keys each time it opens and shows **works** or **rejected** (with how the pasted key begins
+and its length, never the whole key). To enter keys again, e.g. after making new ones, double-click
+`extractor/change-keys.command`.
 
 ### Key 1: Claude API key (`ANTHROPIC_API_KEY`)
 1. Go to https://platform.claude.com (the Claude Console; the old address console.anthropic.com leads there too) and
