@@ -12,6 +12,7 @@ import argparse, hashlib, http.server, os, re, socketserver, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SKIP = {'.git', 'node_modules', '__pycache__'}
+DEMO_LINKS = False
 
 RELOAD = """<script>/* dev live-reload */
 (function(){var v=null;function tick(){fetch('/__version',{cache:'no-store'}).then(function(r){return r.text();}).then(function(t){if(v!==null&&t!==v)location.reload();v=t;}).catch(function(){});}
@@ -61,6 +62,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         path = self.path.split('?', 1)[0]
         if path == '/__version':
             return self._send(tree_version().encode(), 'text/plain')
+        if path == '/data/suggestions.js' and DEMO_LINKS:
+            return self._send(open(os.path.join(ROOT, 'tools', 'demo-suggestions.js'), 'rb').read(), 'application/javascript')
         if path == '/sw.js':
             return self._send(SW_KILL, 'application/javascript')
         if path in ('/', '/index.html'):
@@ -82,7 +85,9 @@ class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('--port', type=int, default=8790)
-    port = ap.parse_args().port
+    ap.add_argument('--demo-links', action='store_true', help='show sample suggestions from links (tools/demo-suggestions.js)')
+    a = ap.parse_args()
+    port, DEMO_LINKS = a.port, a.demo_links
     with Server(('', port), Handler) as srv:
         print('Live preview on http://localhost:%d/  (Ctrl-C to stop)' % port, flush=True)
         try:

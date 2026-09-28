@@ -14,7 +14,7 @@ URL="http://localhost:$PORT/"
 UDID=$(xcrun simctl list devices available | grep -m1 "iPhone 18 Pro (" | grep -Eo '[A-F0-9]{8}(-[A-F0-9]{4}){3}-[A-F0-9]{12}')
 [ -z "$UDID" ] && UDID=$(xcrun simctl list devices available | grep -m1 "iPhone" | grep -Eo '[A-F0-9]{8}(-[A-F0-9]{4}){3}-[A-F0-9]{12}')
 
-python3 tools/dev.py --port "$PORT" &
+python3 tools/dev.py --port "$PORT" ${SG_DEMO_LINKS:+--demo-links} &
 SERVER=$!
 trap 'kill $SERVER 2>/dev/null; exit 0' INT TERM EXIT
 sleep 1
