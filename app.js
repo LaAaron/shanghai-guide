@@ -1616,7 +1616,7 @@
     const here = groups.map(g => ({ s:g.s, places:g.places.filter(p => p.guide === GUIDE.id) })).filter(g => g.places.length);
     const elsewhere = {};
     groups.forEach(g => g.places.forEach(p => { if (p.guide !== GUIDE.id) elsewhere[p.guide] = (elsewhere[p.guide] || 0) + 1; }));
-    const other = Object.keys(elsewhere).map(id => { const g = GUIDES.find(x => x.id === id); return g ? plural(elsewhere[id], 'more') + ' in the ' + g.subtitle : ''; }).filter(Boolean);
+    const other = Object.keys(elsewhere).map(id => { const g = GUIDES.find(x => x.id === id); return g ? elsewhere[id] + ' more' + ' in the ' + g.subtitle : ''; }).filter(Boolean);
     if (!here.length && !links.length && !other.length) return '';
     const n = here.reduce((a, g) => a + g.places.length, 0);
     return '<section class="sugg-sec"><div class="district-heading">' + (n ? 'To review · ' + n + ' from links' : 'Links') + '</div>' +
