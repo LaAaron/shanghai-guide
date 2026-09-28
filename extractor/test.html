@@ -64,7 +64,7 @@ fetch('/api/status').then(r => r.json()).then(s => {
   $('#keyhelp').hidden = Object.values(s.keys).every(k => k.ok !== false);
 });
 
-function amapLink(p) {                                        // AMap's website (the uri.amap.com links only work on phones)
+function amapLink(p) {                                        // AMap's own website: the place page, or a search
   if (p.amap && p.amap.id) return 'https://www.amap.com/place/' + encodeURIComponent(p.amap.id);
   const g = status.guides.find(x => x.id === p.guide);
   return 'https://www.amap.com/search?query=' + encodeURIComponent(p.spot.zh || p.spot.name) + (g && g.amapCity ? '&city=' + g.amapCity : '');

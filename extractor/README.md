@@ -103,7 +103,8 @@ computer; the server listens on 127.0.0.1).
 `spot` is exactly what `data/added.js` holds. Pins are GCJ-02 (like the app's map). **Any place whose location is not
 certain gets `approx: true` and a `flag`**, which the app already shows as a warning. With an AMap key, pins come
 from AMap; without one they come from what Claude knows, so check flagged ones with the "Search AMap" button (it opens
-amap.com; the uri.amap.com links the app uses only open the AMap app on a phone).
+amap.com; if it cannot find the server, the Mac's network or a blocker is keeping amap.com out, which also stops the
+AMap lookup).
 
 ## Cost per link (roughly)
 - Claude: a 60-second video is about 10,000 input tokens, about 2–4 US cents; a blog post about 1–3 cents.
