@@ -64,12 +64,10 @@ fetch('/api/status').then(r => r.json()).then(s => {
   $('#keyhelp').hidden = Object.values(s.keys).every(k => k.ok !== false);
 });
 
-function amap(spot, guideId) {
-  const g = status.guides.find(x => x.id === guideId);
-  const q = encodeURIComponent(spot.zh || spot.name);
-  return spot.lat != null
-    ? `https://uri.amap.com/marker?position=${spot.lng},${spot.lat}&name=${q}&coordinate=gaode`
-    : `https://uri.amap.com/search?keyword=${q}${g && g.amapCity ? '&city=' + g.amapCity : ''}`;
+function amapLink(p) {                                        // AMap's website (the uri.amap.com links only work on phones)
+  if (p.amap && p.amap.id) return 'https://www.amap.com/place/' + encodeURIComponent(p.amap.id);
+  const g = status.guides.find(x => x.id === p.guide);
+  return 'https://www.amap.com/search?query=' + encodeURIComponent(p.spot.zh || p.spot.name) + (g && g.amapCity ? '&city=' + g.amapCity : '');
 }
 
 function spotHtml(p) {
@@ -86,10 +84,11 @@ function spotHtml(p) {
     ${s.addr ? `<div class="line"><b>Address</b> ${esc(s.addr)}</div>` : ''}
     ${s.note ? `<div class="line"><b>Notes</b> ${esc(s.note)}</div>` : ''}
     <div class="line"><b>Pin</b> ${s.lat != null ? esc(s.lat + ', ' + s.lng) + (s.approx ? ' (approximate)' : '') : 'none'}</div>
+    ${p.amap ? `<div class="line"><b>AMap</b> ${esc(p.amap.name)} · ${esc(p.amap.district)} ${esc(p.amap.address)}${p.amap.tel ? ' · ' + esc(p.amap.tel) : ''}</div>` : ''}
     ${s.flag ? `<div class="warn">⚠ ${esc(s.flag)}</div>` : ''}
     ${p.warnings.map(w => `<div class="warn">${esc(w)}</div>`).join('')}
     <div class="ev">From: ${esc(p.evidence)}</div>
-    <div class="acts"><a href="${amap(s, p.guide)}" target="_blank" rel="noopener">Check in AMap</a>
+    <div class="acts"><a href="${amapLink(p)}" target="_blank" rel="noopener">${p.amap ? 'Open in AMap' : 'Search AMap'}</a>
       <button data-copy='${esc(JSON.stringify(s))}'>Copy spot JSON</button></div>
   </div>`;
 }

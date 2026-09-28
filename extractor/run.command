@@ -13,13 +13,18 @@ if [ ! -x .venv/bin/python ]; then
 fi
 
 touch .env; chmod 600 .env
-ask() {  # ask KEY PREFIX "description" : prompt for a key if .env does not have it yet
+ask() {  # ask KEY PREFIX "description" [optional] : prompt for a key if .env does not have it yet
   grep -qE "^$1=.+" .env && return
+  [ -n "$4" ] && grep -q "^$1=" .env && return        # an optional key skipped once is not asked for again
   echo; echo "$3"
   while true; do
     read -r -s -p "Paste $1 (it stays hidden), then press Return. Just Return skips it: " v; echo
     v=$(printf '%s' "$v" | tr -d '[:space:]')
-    [ -z "$v" ] && return
+    if [ -z "$v" ]; then [ -n "$4" ] && echo "$1=" >> .env; return; fi
+    if [ -z "$2" ]; then
+      if [ ${#v} -eq 32 ]; then break; else echo "  That is ${#v} characters; AMap keys are 32. Try again."; fi
+      continue
+    fi
     n=$(printf '%s' "$v" | grep -o "$2" | wc -l | tr -d ' ')
     if [ "${v#$2}" = "$v" ]; then echo "  That does not start with $2. Try again."
     elif [ "$n" -gt 1 ]; then echo "  That looks pasted $n times over. Paste it once, then press Return."
@@ -30,6 +35,7 @@ ask() {  # ask KEY PREFIX "description" : prompt for a key if .env does not have
 }
 ask ANTHROPIC_API_KEY sk-ant- "Claude API key (starts with sk-ant-). See extractor/README.md, step 1."
 ask APIFY_TOKEN apify_api_ "Apify API token (starts with apify_api_). Needed for Instagram/TikTok. See extractor/README.md, step 2."
+ask AMAP_KEY "" "AMap Web Service key (32 letters/digits). Optional: finds real pins. See extractor/README.md, step 3." optional
 
 OLD=$(lsof -ti tcp:$PORT -sTCP:LISTEN 2>/dev/null)   # an extractor still running from an earlier window
 [ -n "$OLD" ] && kill $OLD 2>/dev/null && sleep 1

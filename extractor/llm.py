@@ -14,7 +14,8 @@ def schema(cats, guide_ids):
     return {'type': 'object', 'additionalProperties': False, 'required': ['places', 'summary'], 'properties': {
         'summary': {**s, 'description': 'One sentence: what the source is about.'},
         'places': {'type': 'array', 'items': {'type': 'object', 'additionalProperties': False, 'required': [
-            'name', 'zh', 'cat', 'city', 'district', 'addr', 'note', 'lat', 'lng', 'location_confidence', 'location_note', 'evidence'],
+            'name', 'zh', 'cat', 'city', 'district', 'addr', 'note', 'lat', 'lng', 'location_confidence', 'location_note', 'evidence',
+            'amap_query'],
             'properties': {
                 'name': s, 'zh': s, 'cat': {'type': 'string', 'enum': cats},
                 'city': {'type': 'string', 'enum': guide_ids + ['other']},
@@ -22,7 +23,7 @@ def schema(cats, guide_ids):
                 'lat': {'anyOf': [{'type': 'number'}, {'type': 'null'}]},
                 'lng': {'anyOf': [{'type': 'number'}, {'type': 'null'}]},
                 'location_confidence': {'type': 'string', 'enum': ['exact', 'approximate', 'unknown']},
-                'location_note': s, 'evidence': s}}}}}
+                'location_note': s, 'evidence': s, 'amap_query': s}}}}}
 
 
 def system_prompt():
@@ -49,8 +50,9 @@ def system_prompt():
         'the source shows it. Empty if you do not know it; never invent one.',
         '- addr: street address in English/pinyin as the app writes it, e.g. "Huaihai Middle Road No.333, Xintiandi Plaza B1, '
         'Huangpu", with the nearest metro station and exit when known. Empty if unknown.',
-        '- note: at most 200 characters, packed with what the source says: what to order, prices (¥), queue/booking tips, '
-        'opening hours, what makes it worth going. Terse, no filler, no marketing words.',
+        '- note: HARD LIMIT 200 characters (anything longer is cut off mid-word), packed with what the source says: what to order, prices (¥), queue/booking tips, '
+        'opening hours, what makes it worth going. Terse, no filler, no marketing words. If it does not fit, drop the '
+        'least useful detail rather than run over.',
         '- lat/lng: only if you genuinely know where this place is. Coordinates must be GCJ-02 (as AMap/Gaode shows them), '
         'not WGS-84. null when you do not know; never guess a city centre.',
         '- location_confidence: "exact" only if you are confident of the specific branch and the coordinates are within about '
@@ -58,6 +60,8 @@ def system_prompt():
         '"unknown" if you only have a name.',
         '- location_note: when not exact, one short sentence on what is uncertain, written for the traveller, e.g. '
         '"Chain with several branches — video does not say which" or "Only the mall is known". Empty when exact.',
+        '- amap_query: the best text to find this exact place with AMap\'s search: its Chinese name with the branch or mall '
+        'if known (e.g. "坤记兄弟牛肉店 车公庙"), else the English name. Pins are looked up on AMap afterwards with this.',
         '- evidence: where in the source it came from, e.g. "caption", "sign at 0:12", "subtitles", "page section Day 2".',
         '',
         'Include only places the source actually features or recommends (not places merely mentioned in passing, like a '

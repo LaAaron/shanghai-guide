@@ -112,7 +112,7 @@ def to_spots(extracted, source_url):
         if lat is None: conf = 'unknown' if conf == 'exact' else conf
         cat = p.get('cat') if p.get('cat') in cats else 'other'
         district = p.get('district') or 'Unsorted'
-        if g is not None and district not in districts(g) and district != 'Multiple':
+        if g is not None and district not in districts(g) and district not in ('Multiple', 'Unsorted'):
             warnings.append('District "%s" is not one the %s guide uses' % (district, g['place']))
         if conf != 'exact':
             flags.append(p.get('location_note') or {'approximate': 'Approximate location', 'unknown': 'Location not known'}.get(conf, 'Location uncertain'))
@@ -138,6 +138,7 @@ def to_spots(extracted, source_url):
             'confidence': conf,
             'evidence': p.get('evidence', ''),
             'duplicate_of': find_duplicate(g, spot['name'], spot['zh']) if g else None,
+            'amap': p.get('amap'),
             'warnings': warnings + ([] if g else ['Not in any guide area (%s)' % ', '.join(x['place'] for x in gs.values())]),
             'source': source_url,
         })

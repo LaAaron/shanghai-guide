@@ -25,7 +25,7 @@ def load_env():
 
 
 load_env()                                    # before the imports below: they read settings from the environment
-import frames, guide, llm, sources            # noqa: E402
+import amap, frames, guide, llm, sources      # noqa: E402
 
 
 def extract(url, render=False):
@@ -46,6 +46,7 @@ def extract(url, render=False):
     if not src.parts and not shots and not photos:
         raise RuntimeError('Found nothing to read at this link' + (' (%s)' % '; '.join(src.warnings) if src.warnings else ''))
     raw, summary, usage = llm.extract(src, shots, photos, every)
+    src.warnings += amap.enrich(raw, {g['id']: g for g in guide.guides()})
     result = {
         'url': url, 'kind': src.kind, 'title': src.title, 'summary': summary,
         'places': guide.to_spots(raw, url),
