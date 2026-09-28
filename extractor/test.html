@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Link Extractor · Shanghai Guide</title>
+<style>
+:root{--bg:#F8F6F2;--card:#fff;--ink:#1d1d1f;--sub:#6e6e73;--line:#e5e2dc;--accent:#C0392B;--warn-bg:#FFF4D6;--warn:#8F6100;--ok:#2A7444}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 -apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI",sans-serif}
+main{max-width:760px;margin:0 auto;padding:24px 16px 80px}
+h1{font-size:24px;margin:0 0 4px}h1 span{font-weight:400;color:var(--sub);font-size:16px;margin-left:8px}
+p.lead{color:var(--sub);margin:0 0 16px}
+.keys{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;font-size:13px}
+.key{padding:3px 10px;border-radius:99px;background:#eee}.key.on{background:#DDF3E3;color:var(--ok)}.key.off{background:#FDE2DE;color:var(--accent)}
+textarea{width:100%;min-height:120px;padding:12px;border:1px solid var(--line);border-radius:12px;font:inherit;background:#fff;resize:vertical}
+.row{display:flex;gap:12px;align-items:center;margin:10px 0 24px;flex-wrap:wrap}
+button{font:inherit;border:0;border-radius:10px;padding:9px 16px;background:#ecebe8;color:var(--ink);cursor:pointer}
+button.primary{background:var(--accent);color:#fff;font-weight:600}button:disabled{opacity:.5;cursor:default}
+label.chk{color:var(--sub);font-size:14px;display:flex;gap:6px;align-items:center}
+.result{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:16px}
+.result h2{font-size:15px;margin:0;word-break:break-all;font-weight:600}
+.meta{color:var(--sub);font-size:13px;margin:4px 0 8px}
+.warn{background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:6px 10px;font-size:13px;margin:6px 0}
+.err{color:var(--accent);font-weight:500}
+.spot{border-top:1px solid var(--line);padding:12px 0 4px}
+.spot .nm{font-weight:600;font-size:16px}.spot .zh{color:var(--sub);margin-left:6px}
+.tags{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+.tag{font-size:12px;padding:2px 8px;border-radius:99px;background:#f0eee9;color:#555}
+.tag.exact{background:#DDF3E3;color:var(--ok)}.tag.approximate,.tag.unknown{background:var(--warn-bg);color:var(--warn)}
+.tag.dup{background:#E6E3FF;color:#4A40B4}.tag.none{background:#FDE2DE;color:var(--accent)}
+.line{margin:3px 0}.line b{color:var(--sub);font-weight:500;font-size:13px;display:inline-block;min-width:64px}
+.ev{color:var(--sub);font-size:12px}
+.acts{display:flex;gap:8px;margin:8px 0 4px;flex-wrap:wrap}.acts a,.acts button{font-size:13px;padding:5px 10px;border-radius:8px;background:#f0eee9;color:var(--ink);text-decoration:none}
+details{margin-top:10px}summary{cursor:pointer;color:var(--sub);font-size:13px}
+pre{background:#f5f4f1;border-radius:8px;padding:10px;overflow:auto;font-size:12px;max-height:340px}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid #ccc;border-top-color:var(--accent);border-radius:50%;animation:s 1s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes s{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Link extractor<span>test page</span></h1>
+  <p class="lead">Paste Instagram, TikTok or web links, one per line. Each is read by Claude and turned into guide spots. Nothing is added to the app.</p>
+  <div class="keys" id="keys"></div>
+  <textarea id="urls" placeholder="https://www.instagram.com/reel/…&#10;https://www.tiktok.com/@someone/video/…&#10;https://some-blog.com/best-xiaolongbao-shanghai"></textarea>
+  <div class="row">
+    <button class="primary" id="go">Extract places</button>
+    <label class="chk"><input type="checkbox" id="render"> Web pages: load in a real browser (Apify, slower)</label>
+  </div>
+  <div id="out"></div>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let status = {guides: [], categories: {}};
+
+fetch('/api/status').then(r => r.json()).then(s => {
+  status = s;
+  $('#keys').innerHTML = [['anthropic','Claude key'],['apify','Apify token']].map(([k,l]) =>
+    `<span class="key ${s[k]?'on':'off'}">${l}: ${s[k]?'set':'missing'}</span>`).join('') +
+    `<span class="key">Guides: ${s.guides.map(g=>esc(g.place)).join(', ')}</span>`;
+});
+
+function amap(spot, guideId) {
+  const g = status.guides.find(x => x.id === guideId);
+  const q = encodeURIComponent(spot.zh || spot.name);
+  return spot.lat != null
+    ? `https://uri.amap.com/marker?position=${spot.lng},${spot.lat}&name=${q}&coordinate=gaode`
+    : `https://uri.amap.com/search?keyword=${q}${g && g.amapCity ? '&city=' + g.amapCity : ''}`;
+}
+
+function spotHtml(p) {
+  const s = p.spot, cat = status.categories[s.cat] || s.cat;
+  const guide = (status.guides.find(g => g.id === p.guide) || {}).place;
+  return `<div class="spot">
+    <div><span class="nm">${esc(s.name)}</span><span class="zh">${esc(s.zh)}</span></div>
+    <div class="tags">
+      <span class="tag ${guide?'':'none'}">${esc(guide || 'Not in a guide')}</span>
+      <span class="tag">${esc(cat)}</span><span class="tag">${esc(s.district)}</span>
+      <span class="tag ${esc(p.confidence)}">location: ${esc(p.confidence)}</span>
+      ${p.duplicate_of ? `<span class="tag dup">already in guide: ${esc(p.duplicate_of)}</span>` : ''}
+    </div>
+    ${s.addr ? `<div class="line"><b>Address</b> ${esc(s.addr)}</div>` : ''}
+    ${s.note ? `<div class="line"><b>Notes</b> ${esc(s.note)}</div>` : ''}
+    <div class="line"><b>Pin</b> ${s.lat != null ? esc(s.lat + ', ' + s.lng) + (s.approx ? ' (approximate)' : '') : 'none'}</div>
+    ${s.flag ? `<div class="warn">⚠ ${esc(s.flag)}</div>` : ''}
+    ${p.warnings.map(w => `<div class="warn">${esc(w)}</div>`).join('')}
+    <div class="ev">From: ${esc(p.evidence)}</div>
+    <div class="acts"><a href="${amap(s, p.guide)}" target="_blank" rel="noopener">Check in AMap</a>
+      <button data-copy='${esc(JSON.stringify(s))}'>Copy spot JSON</button></div>
+  </div>`;
+}
+
+function resultHtml(r) {
+  if (r.error) return `<h2>${esc(r.url)}</h2><p class="err">Failed: ${esc(r.error)}</p>`;
+  const i = r.inputs, u = r.usage;
+  return `<h2>${esc(r.title || r.url)}</h2>
+    <div class="meta">${esc(r.kind)} · <a href="${esc(r.url)}" target="_blank" rel="noopener">open link</a> · ${esc(r.summary)}</div>
+    <div class="meta">Read: ${esc(i.text_parts.join(', ') || 'no text')}${i.frames ? ` · ${i.frames} frames from ${Math.round(i.video_seconds)} s of video` : ''}${i.photos ? ` · ${i.photos} photos` : ''}
+      · ${u.input_tokens.toLocaleString()} + ${u.output_tokens.toLocaleString()} tokens ≈ $${u.claude_cost_usd.toFixed(3)} · ${r.seconds} s</div>
+    ${r.warnings.map(w => `<div class="warn">${esc(w)}</div>`).join('')}
+    ${r.places.length ? r.places.map(spotHtml).join('') : '<p class="meta">No places found.</p>'}
+    <details><summary>Full JSON</summary><pre>${esc(JSON.stringify(r, null, 1))}</pre></details>`;
+}
+
+$('#out').addEventListener('click', e => {
+  const b = e.target.closest('[data-copy]');
+  if (!b) return;
+  navigator.clipboard.writeText(b.dataset.copy).then(() => { b.textContent = 'Copied'; setTimeout(() => b.textContent = 'Copy spot JSON', 1200); });
+});
+
+$('#go').addEventListener('click', async () => {
+  const urls = $('#urls').value.split(/\s+/).map(s => s.trim()).filter(Boolean);
+  if (!urls.length) return;
+  $('#go').disabled = true;
+  const render = $('#render').checked;
+  await Promise.all(urls.map(async url => {                 // links run side by side; each card fills in when done
+    const box = document.createElement('div');
+    box.className = 'result';
+    box.innerHTML = `<h2>${esc(url)}</h2><div class="meta"><span class="spin"></span>Fetching, sampling frames, asking Claude… (up to a few minutes)</div>`;
+    $('#out').prepend(box);
+    try {
+      const r = await fetch('/api/extract', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({url, render})});
+      box.innerHTML = resultHtml(await r.json());
+    } catch (e) {
+      box.innerHTML = resultHtml({url, error: String(e)});
+    }
+  }));
+  $('#go').disabled = false;
+});
+</script>
+</body>
+</html>

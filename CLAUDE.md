@@ -14,6 +14,7 @@ Offline map + food guide, a static PWA on GitHub Pages: https://laaaron.github.i
 ## Layout
 - `index.html`, `app.css`, `app.js`, `pwa.js`, `sw.js` (generated), `manifest.webmanifest`, `vendor/leaflet.*` (bundled; nothing may load from the internet at runtime: it must work offline in mainland China).
 - `data/guides.js` lists the guides (title becomes a switcher when there are 2+): Shanghai and Shenzhen. `guides/shenzhen/` holds the Shenzhen guide (centre Futian; map tiles drawn from Overture Maps by `tools/mapbuild/`, see its README; no road/area name labels yet). The Shanghai guide is `data/places.js` (categories + 88 seed spots), `data/added.js` (spots added later), `data/geo.js`, `data/labels.js`, `data/tiles.js` (8.6 MB of map tiles). `data/photos.js` + `photos/` are shared photos (global).
+- `extractor/`: local backend (not part of the app, not cached by `sw.js`) that turns Instagram/TikTok/web links into spots via Apify + the Claude API; test page on http://localhost:8791 via `extractor/run.command`. Keys live in `extractor/.env` (gitignored). See its README.
 - `tools/stamp.py` (fingerprints + service worker, run before every commit), `tools/inbox.py` (validates app submissions), `tools/dev.command` / `tools/dev.py` (live-reload preview on the Mac and in the iPhone simulator, http://localhost:8790).
 
 ## Traps
