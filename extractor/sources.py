@@ -42,7 +42,7 @@ def kind_of(url):
 def get(url, headers=None, limit=None):
     req = urllib.request.Request(url, headers={'User-Agent': UA, 'Accept-Language': 'en,zh-CN;q=0.8', **(headers or {})})
     with urllib.request.urlopen(req, timeout=60, context=CTX) as r:
-        data = r.read(limit + 1 if limit else -1)
+        data = r.read(limit + 1) if limit else r.read()      # read(-1) fails on Python 3.9 (the Mac's)
         if limit and len(data) > limit: raise ValueError('File is larger than %d MB' % (limit // 1_000_000))
         return data, r.headers
 

@@ -86,14 +86,14 @@ def extract(source, frames, photos, every=0):
     content.append({'type': 'text', 'text': 'List the places in this source.'})
 
     client = anthropic.Anthropic()
-    with client.messages.stream(
-        model=MODEL,
-        max_tokens=32000,
-        system=system_prompt(),
-        messages=[{'role': 'user', 'content': content}],
-        output_config={'format': {'type': 'json_schema', 'schema': schema(cats, [g['id'] for g in gs])}},
-    ) as stream:
-        msg = stream.get_final_message()
+    args = dict(model=MODEL, max_tokens=32000, system=system_prompt(), messages=[{'role': 'user', 'content': content}])
+    output_config = {'format': {'type': 'json_schema', 'schema': schema(cats, [g['id'] for g in gs])}}
+    try:
+        stream = client.messages.stream(**args, output_config=output_config)
+    except TypeError:            # older SDK (the newest ones need Python 3.10+) does not know output_config: send it as-is
+        stream = client.messages.stream(**args, extra_body={'output_config': output_config})
+    with stream as s:
+        msg = s.get_final_message()
     if msg.stop_reason == 'refusal':
         raise RuntimeError('Claude declined this request (%s)' % getattr(msg.stop_details, 'category', None))
     if msg.stop_reason == 'max_tokens':
