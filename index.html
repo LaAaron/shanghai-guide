@@ -215,6 +215,18 @@
     </div>
     <div class="sheet-body">
       <p class="sub">Saved on this phone first. Afterwards, tap <b>Share</b> to add it to the guide on everyone's phone.</p>
+      <div id="link-part">
+        <div class="group-label">From a link</div>
+        <div class="form-group">
+          <div class="field">
+            <label for="f-link">Instagram, TikTok or web page</label>
+            <input id="f-link" type="url" inputmode="url" placeholder="Paste a link" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send">
+          </div>
+        </div>
+        <div class="link-row"><button type="button" class="dir-btn primary" id="link-send">Find places</button><span class="link-msg" id="link-msg" role="status" aria-live="polite"></span></div>
+        <div class="hint">Claude reads it and the places come back as suggestions at the top of the list, for you to check before they're added (takes a few minutes).</div>
+        <div class="group-label">Or type it in</div>
+      </div>
       <form id="add-form">
         <div class="form-group">
           <div class="field">
@@ -294,6 +306,7 @@
 })();
 </script>
 <script src="data/photos.js"></script>
+<script src="data/suggestions.js"></script>
 <script src="app.js"></script>
 <script src="pwa.js"></script>
 </body>

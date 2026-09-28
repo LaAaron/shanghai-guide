@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """The shared guide's inbox. The app files GitHub issues; this turns the valid ones into data files.
 
-Issues it understands (title prefix):   [new-spot]  [new-photo]  [remove-photo]
+Issues it understands (title prefix):   [new-spot]  [new-photo]  [remove-photo]  [new-link]  [review]
+[new-link] runs extractor/ on the link (Claude + Apify, keys from the repository's secrets) and saves the places it finds in
+data/suggestions.js; [review] adds one of them to the guide or dismisses it.
 Everything in an issue is UNTRUSTED. It is parsed as JSON, validated field by field, images are decoded and re-encoded
 with Pillow, and nothing is ever executed or put into a shell command. Only people in tools/allowed-users.txt count.
 
@@ -11,7 +13,7 @@ Used by .github/workflows/inbox.yml, in two phases so nothing is closed unless t
     python3 tools/inbox.py report    comment on and close those issues            (needs GITHUB_TOKEN, GITHUB_REPOSITORY)
 
 It is safe to run repeatedly: anything already in the guide comes back as "duplicate".
-Local testing without GitHub:  python3 tools/inbox.py local <spot|photo|remove> <github-login> < issue-body.txt
+Local testing without GitHub:  python3 tools/inbox.py local <spot|photo|remove|link|review> <github-login> < issue-body.txt
 """
 import base64, binascii, datetime, io, json, os, re, sys, urllib.error, urllib.request
 
@@ -115,10 +117,8 @@ def known_spot_ids():
 
 
 # ---------------------------------------------------------------- [new-spot]
-def handle_spot(user, body, created=None):
-    check_user(user)
-    raw = json_block(body, 20000)
-    g = guide_of(raw)
+def spot_from(raw, g, user):
+    """A validated spot for guide g from the submitted fields (the same checks for spots typed in and spots from links)."""
     cats = re.findall(r'^\s+(\w+):\s*\{\s*label', rd(g['places']), re.M)
     spot = {}
     spot['id'] = ident(raw, 'id')
@@ -139,9 +139,14 @@ def handle_spot(user, body, created=None):
         lat, lng = round(float(lat), 6), round(float(lng), 6)
     spot['lat'], spot['lng'] = lat, lng
     spot['approx'] = raw.get('approx') is True            # only a real boolean; anything else means "exact"
+    flag = text(raw, 'flag', 200)                         # a warning shown on the spot (spots from links whose location is uncertain)
+    if flag: spot['flag'] = flag
     spot['by'] = who(raw, user)
     spot['at'] = datetime.date.today().isoformat()
+    return spot
 
+
+def store_spot(spot, g):
     for other in guides():
         if spot['id'] in seed_ids(other): raise Done('rejected', 'That id clashes with a built-in spot.')
         if other['id'] != g['id'] and any(a.get('id') == spot['id'] for a in load_added(other)): raise Done('rejected', 'That id clashes with a spot in another guide.')
@@ -149,6 +154,100 @@ def handle_spot(user, body, created=None):
     if any(a.get('id') == spot['id'] for a in added): raise Done('duplicate', '"%s" is already in the guide, nothing changed.' % spot['name'], spot['name'])
     added.append(spot)
     save_added(added, g)
+
+
+def handle_spot(user, body, created=None):
+    check_user(user)
+    raw = json_block(body, 20000)
+    g = guide_of(raw)
+    spot = spot_from(raw, g, user)
+    store_spot(spot, g)
+    raise Done('added', 'Added "%s". It will be live in about a minute; open the app while online and tap "Update ready".' % spot['name'], spot['name'])
+
+
+# ---------------------------------------------------------------- [new-link]: find places in a link, for review
+SUGGESTIONS = 'data/suggestions.js'
+EDITABLE = ('name', 'zh', 'cat', 'district', 'addr', 'note', 'lat', 'lng', 'approx', 'flag')
+
+def load_suggestions():
+    if not os.path.exists(os.path.join(ROOT, SUGGESTIONS)): return []
+    mm = re.search(r'SG\.SUGGESTIONS = (\[.*\]);', rd(SUGGESTIONS), re.S)
+    return json.loads(mm.group(1)) if mm else []
+
+def save_suggestions(l):
+    body = ',\n'.join(' ' + json.dumps(x, ensure_ascii=False, separators=(',', ':')) for x in l)
+    wr(SUGGESTIONS, '/* Places found in links sent from the app, waiting for review (tools/inbox.py). Do not edit by hand. */\n'
+       'window.SG = window.SG || {};\nSG.SUGGESTIONS = [\n' + body + ('\n' if body else '') + '];\n')
+
+
+def handle_link(user, body, created=None):
+    check_user(user)                                      # before anything that costs money
+    raw = json_block(body, 5000)
+    lid = ident(raw, 'id')
+    url = text(raw, 'url', 500, True)
+    if not re.match(r'https?://[^\s/]+\.[^\s]+$', url): raise Done('rejected', 'That does not look like a web link.')
+    sugs = load_suggestions()
+    if any(x['id'] == lid for x in sugs): raise Done('duplicate', 'This link is already waiting for review.', url)
+    if any(x['url'] == url for x in sugs): raise Done('duplicate', 'This link was already sent and is waiting for review.', url)
+    sys.path.insert(0, os.path.join(ROOT, 'extractor'))
+    try:
+        import extract                                    # needs anthropic + opencv and the ANTHROPIC_API_KEY / APIFY_TOKEN secrets
+        r = extract.extract(url)
+    except Exception as e:
+        raise Done('rejected', 'Could not read this link: %s' % (str(e) or e.__class__.__name__)[:300], url)
+    places = [x for x in r['places'] if x['guide']]
+    if not places:
+        raise Done('rejected', 'No places in Shanghai or Shenzhen were found in this link.' if r['places'] else 'No places were found in this link.', url)
+    taken = known_spot_ids() | {p['spot']['id'] for x in sugs for p in x['places']}
+    out = []
+    for i, x in enumerate(places):
+        sp = {k: v for k, v in x['spot'].items() if k not in ('by', 'at')}
+        base, n = sp['id'], 2
+        while sp['id'] in taken: sp['id'], n = '%s-%d' % (base, n), n + 1
+        taken.add(sp['id'])
+        out.append({'i': i, 'guide': x['guide'], 'spot': sp, 'confidence': x['confidence'], 'evidence': x['evidence'][:120],
+                    'duplicate_of': x['duplicate_of']})
+    sugs.append({'id': lid, 'url': url, 'title': (r['title'] or '')[:120], 'summary': (r['summary'] or '')[:300], 'by': who(raw, user),
+                 'at': datetime.date.today().isoformat(), 'places': out})
+    save_suggestions(sugs)
+    names = ', '.join(p['spot']['name'] for p in out[:8]) + (' and %d more' % (len(out) - 8) if len(out) > 8 else '')
+    raise Done('added', 'Found %d place%s: %s. Review them in the app: they are at the top of the list after the next update.'
+               % (len(out), '' if len(out) == 1 else 's', names), url)
+
+
+# ---------------------------------------------------------------- [review]: add or dismiss one suggested place
+def handle_review(user, body, created=None):
+    check_user(user)
+    raw = json_block(body, 20000)
+    sid, action = ident(raw, 'sid'), raw.get('action')
+    i = raw.get('i')
+    if action not in ('add', 'dismiss') or isinstance(i, bool) or not isinstance(i, int): raise Done('rejected', 'That review was not understood.')
+    sugs = load_suggestions()
+    s = next((x for x in sugs if x['id'] == sid), None)
+    p = next((x for x in (s or {}).get('places', []) if x['i'] == i), None)
+    if p is None: raise Done('duplicate', 'That suggestion was already reviewed, nothing changed.')
+
+    def resolve():
+        s['places'].remove(p)
+        save_suggestions([x for x in sugs if x['places']])
+
+    if action == 'dismiss':
+        resolve()
+        raise Done('added', 'Dismissed "%s".' % p['spot']['name'], p['spot']['name'])
+    g = next((x for x in guides() if x['id'] == p['guide']), None)
+    if g is None: raise Done('rejected', 'That place is not in any guide\'s area.')
+    edited = raw.get('spot') if isinstance(raw.get('spot'), dict) else {}
+    fields = dict(p['spot'], **{k: edited[k] for k in EDITABLE if k in edited})
+    fields['id'] = p['spot']['id']                        # the id is the suggestion's, whatever was sent
+    fields['who'] = raw.get('who', '')
+    spot = spot_from(fields, g, user)
+    try:
+        store_spot(spot, g)
+    except Done as d:
+        if d.result != 'duplicate': raise
+        resolve()
+        raise Done('added', '"%s" was already in the guide; the suggestion is cleared.' % spot['name'], spot['name'])
+    resolve()
     raise Done('added', 'Added "%s". It will be live in about a minute; open the app while online and tap "Update ready".' % spot['name'], spot['name'])
 
 
@@ -206,7 +305,7 @@ def handle_remove(user, body, created=None):
     raise Done('added', 'Photo removed.', pid)
 
 
-HANDLERS = {'[new-spot]': handle_spot, '[new-photo]': handle_photo, '[remove-photo]': handle_remove}
+HANDLERS = {'[new-spot]': handle_spot, '[new-photo]': handle_photo, '[remove-photo]': handle_remove, '[new-link]': handle_link, '[review]': handle_review}
 
 
 # ---------------------------------------------------------------- GitHub plumbing
@@ -264,7 +363,8 @@ def report():
 
 def local(kind, user):
     body = sys.stdin.read()
-    try: HANDLERS['[%s]' % ('new-' + kind if kind != 'remove' else 'remove-photo')](user, body, None)
+    name = {'remove': 'remove-photo', 'review': 'review'}.get(kind, 'new-' + kind)
+    try: HANDLERS['[%s]' % name](user, body, None)
     except Done as d: print('[%s] %s' % (d.result, d.message)); return
     except Pending: print('[pending] its spot is not in the guide yet')
 

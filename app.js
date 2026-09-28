@@ -5,6 +5,7 @@
   const inThisGuide = p => (p.guide || GUIDES[0].id) === GUIDE.id;     // spots saved before guides existed belong to the first guide
   const ADDED_PLACES = window.SG.ADDED_PLACES || [];      // spots added through the app and approved (data/added.js)
   const SHARED_PHOTOS = window.SG.PHOTOS || {};             // photos shared with everyone (data/photos.js, files in photos/)
+  const SUGGESTIONS = window.SG.SUGGESTIONS || [];          // places found in links sent from the app, waiting for review (data/suggestions.js)
   const SHARE_REPO = 'LaAaron/shanghai-guide';
   let userPlaces = [];
   let activeCat = "all";
@@ -58,6 +59,7 @@
   }
 
   const sharedIds = new Set(ADDED_PLACES.map(p => p.id));
+  const suggIds = new Set(SUGGESTIONS.map(s => s.id));
   // built-in spots + spots shared by anyone in the group + spots saved only on this phone (until they arrive as shared)
   function allPlaces(){ return SEED_PLACES.concat(ADDED_PLACES, userPlaces.filter(p => inThisGuide(p) && !sharedIds.has(p.id))); }
   function districts(){ return Array.from(new Set(allPlaces().map(p => p.district))).sort(); }
@@ -179,6 +181,11 @@
   }
 
   function renderList(){
+    renderPlaces();
+    const sh = searchTerm ? '' : suggestionsHtml();       // suggestions from links sit above the spots
+    if (sh) listPane.insertAdjacentHTML('afterbegin', sh);
+  }
+  function renderPlaces(){
     const filtered = allPlaces().filter(matchesFilters);
     visibleCount.textContent = filtered.length;
     if (visibleCount.nextSibling) visibleCount.nextSibling.textContent = filtered.length === 1 ? ' spot' : ' spots';
@@ -208,6 +215,10 @@
   }
 
   listPane.addEventListener('click', e => {
+    const sg = e.target.closest('[data-sg-act]');
+    if (sg){ const c = sg.closest('.sugg-card'); suggestionAction(sg.dataset.sgAct, c.dataset.sid, +c.dataset.i); return; }
+    const lk = e.target.closest('[data-lk-act]');
+    if (lk){ linkAction(lk.dataset.lkAct, lk.closest('.link-item').dataset.lid); return; }
     const btn = e.target.closest('[data-act]');
     if (btn && btn.dataset.act === 'reset'){ resetFilters(); return; }
     const card = e.target.closest('.place-card');
@@ -901,7 +912,8 @@
   /* ---------- Add-a-find sheet ---------- */
   let picking = false, pickMarker = null, picker = null;
   function clearPickMarker(){ if (pickMarker && map){ map.removeLayer(pickMarker); } pickMarker = null; }
-  const addSheet = makeSheet($('add-sheet-backdrop'), $('add-sheet'), () => { if (!picking) clearPickMarker(); });
+  let editingReview = null;                      // a suggested place being checked in the form before it's added: { sid, i, spot }
+  const addSheet = makeSheet($('add-sheet-backdrop'), $('add-sheet'), () => { if (!picking){ clearPickMarker(); if (editingReview) endReviewEdit(); } });
   const addForm = $('add-form');
   const catSelect = $('f-cat');
 
@@ -912,8 +924,10 @@
     catSelect.appendChild(opt);
   });
 
-  $('add-btn').addEventListener('click', () => { dismissQuick(true); addSheet.open(); });
+  $('add-btn').addEventListener('click', () => { dismissQuick(true); $('link-msg').textContent = ''; addSheet.open(); });
   $('cancel-add').addEventListener('click', () => { addSheet.close(); });
+  function setReviewMode(on){ $('add-title').textContent = on ? 'Check and add' : 'Add a find'; $('link-part').hidden = on; }
+  function endReviewEdit(){ editingReview = null; addForm.reset(); resetLoc(); setReviewMode(false); }
 
   // ---- location: GPS (converted to the map's coordinate system), tap on the map, or typed
   // China's maps are drawn in GCJ-02, a deliberately shifted system. A phone's GPS reports plain WGS-84, so it must be
@@ -1043,8 +1057,9 @@
     const lat = parseFloat($('f-lat').value);
     const lng = parseFloat($('f-lng').value);
     if (isFinite(lat) && isFinite(lng) && !inArea(lat, lng)){ showLoc('That’s outside the ' + GUIDE.place + ' area this guide covers, so it can’t be pinned. Pick a spot on the map instead.', 'err'); return; }
+    const rv = editingReview;
     const place = {
-      id: 'u-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8),
+      id: rv ? rv.spot.id : 'u-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8),
       name: name,
       zh: $('f-zh').value.trim(),
       cat: catSelect.value,
@@ -1057,6 +1072,12 @@
       userAdded: true,
       guide: GUIDE.id
     };
+    if (rv){                                       // a checked suggestion: keep its warning unless the pin was moved
+      place.review = { sid: rv.sid, i: rv.i };
+      const s = rv.spot, same = place.lat == null ? s.lat == null : s.lat != null && Math.abs(place.lat - s.lat) < 1e-6 && Math.abs(place.lng - s.lng) < 1e-6;
+      if (same){ place.approx = !!s.approx; if (s.flag) place.flag = s.flag; }
+      editingReview = null; setReviewMode(false);
+    }
     userPlaces.push(place);
     await saveUserPlaces();
     addForm.reset(); resetLoc();
@@ -1493,6 +1514,120 @@
     else if (viewer.classList.contains('open')){ closeViewer(); e.stopPropagation(); }
   }, true);
 
+  /* ---------- Links: paste an Instagram/TikTok/web link; the guide's GitHub job reads it (extractor/) and suggests the places in it.
+     Suggestions (data/suggestions.js) show at the top of the list; each is added (optionally checked in the form first) or dismissed.
+     Both are sent like spots, so the other phone sees the same list. ---------- */
+  const LINKS_KEY = 'sg-links', DISMISS_KEY = 'sg-sugg-dismissed';
+  const hostOf = u => { try{ return new URL(u).hostname.replace(/^www\./, ''); } catch(e){ return u; } };
+  function suggPlace(sid, i){
+    const s = SUGGESTIONS.find(x => x.id === sid);
+    return s ? s.places.find(p => p.i === i) : null;
+  }
+  // suggested places already dealt with on this phone (added or dismissed, maybe not sent yet)
+  function reviewedKeys(){
+    const k = new Set(readJson(DISMISS_KEY, []).map(d => d.sid + ':' + d.i));
+    userPlaces.forEach(p => { if (p.review) k.add(p.review.sid + ':' + p.review.i); });
+    return k;
+  }
+  function openSuggestions(){
+    const done = reviewedKeys();
+    return SUGGESTIONS.map(s => ({ s, places: s.places.filter(p => !done.has(s.id + ':' + p.i)) })).filter(g => g.places.length);
+  }
+
+  $('link-send').addEventListener('click', () => {
+    const msg = $('link-msg'), m = $('f-link').value.match(/https?:\/\/[^\s<>"]+/i);
+    if (!m){ msg.textContent = 'Paste a link that starts with http'; return; }
+    const url = m[0].replace(/[)\].,;:!?'’”]+$/, '');
+    const l = readJson(LINKS_KEY, []);
+    if (l.some(x => x.url === url && !x.rejected) || SUGGESTIONS.some(s => s.url === url)){ msg.textContent = 'That link was already sent.'; return; }
+    l.push({ id:'l-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8), url, guide:GUIDE.id, at:Date.now() });
+    writeJson(LINKS_KEY, l);
+    $('f-link').value = ''; msg.textContent = '';
+    addSheet.close(); renderList(); listPane.scrollTop = 0;
+    if (syncKey()){ toast('Sent. Its places appear at the top of the list in a few minutes, after “Update ready”.', { ms:7000 }); syncNow(); }
+    else toast('Saved on this phone. Add the sync key to send it.', { action:'Add key', ms:9000, onAction: openSync });
+  });
+  $('f-link').addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); $('link-send').click(); } });
+
+  async function suggestionAction(act, sid, i){
+    const x = suggPlace(sid, i); if (!x) return;
+    const s = x.spot;
+    if (act === 'add'){
+      userPlaces.push(Object.assign({}, s, { userAdded:true, guide:x.guide, review:{ sid, i } }));
+      await saveUserPlaces(); render();
+      if (syncKey()){ toast('Added “' + s.name + '”. Sending it to the guide…'); syncNow(); }
+      else toast('Added on this phone. Add the sync key to share it.', { action:'Add key', ms:9000, onAction: openSync });
+    } else if (act === 'edit'){
+      addForm.reset(); resetLoc();
+      editingReview = { sid, i, spot:s }; setReviewMode(true);
+      $('f-name').value = s.name || ''; $('f-zh').value = s.zh || '';
+      catSelect.value = CATEGORIES[s.cat] ? s.cat : 'other';
+      $('f-district').value = s.district && s.district !== 'Unsorted' ? s.district : '';
+      $('f-addr').value = s.addr || ''; $('f-note').value = s.note || '';
+      if (s.lat != null && s.lng != null) setLoc(s.lat, s.lng, s.approx ? 'from the link, approximate' : 'from the link');
+      addSheet.open();
+    } else if (act === 'dismiss'){
+      const l = readJson(DISMISS_KEY, []);
+      if (!l.some(d => d.sid === sid && d.i === i)) l.push({ sid, i, name:s.name });
+      writeJson(DISMISS_KEY, l); renderList();
+      toast('Dismissed “' + s.name + '”.', { action:'Undo', ms:6000, onAction: () => {       // sent with the next sync, so there is time to undo
+        const now = readJson(DISMISS_KEY, []), d = now.find(y => y.sid === sid && y.i === i);
+        if (d && !d.issue){ writeJson(DISMISS_KEY, now.filter(y => y !== d)); renderList(); }
+      } });
+      updateSyncUi();
+    }
+  }
+  function linkAction(act, id){
+    let l = readJson(LINKS_KEY, []);
+    const x = l.find(y => y.id === id); if (!x) return;
+    if (act === 'retry'){ delete x.rejected; delete x.issue; delete x.closed; writeJson(LINKS_KEY, l); renderList(); syncNow(true); return; }
+    if (act === 'send'){ syncKey() ? syncNow(true) : openSync(); return; }
+    if (act === 'drop'){ writeJson(LINKS_KEY, l.filter(y => y !== x)); renderList(); updateSyncUi(); }
+  }
+
+  function suggCardHtml(sid, x){
+    const s = x.spot, c = CATEGORIES[s.cat] || CATEGORIES.other, dup = x.duplicate_of ? findPlace(x.duplicate_of) : null;
+    const pin = s.lat == null ? ' · no pin' : s.approx ? ' · approximate pin' : '';
+    return '<div class="sugg-card" data-sid="' + esc(sid) + '" data-i="' + x.i + '">' +
+      '<div class="glyph" style="background:' + c.color + ';color:' + c.ink + '">' + svgIcon(ICONS[s.cat] ? s.cat : 'other') + '</div>' +
+      '<div class="pc-body">' +
+        '<div class="row1"><h3>' + esc(s.name) + '</h3><span class="cat-tag" style="background:' + c.color + ';color:' + c.ink + '">' + esc(c.label) + '</span></div>' +
+        (s.zh ? '<div class="zh">' + esc(s.zh) + '</div>' : '') +
+        (s.note ? '<div class="note">' + esc(s.note) + '</div>' : '') +
+        '<div class="addr">' + esc([s.district && s.district !== 'Unsorted' ? s.district : '', s.addr].filter(Boolean).join(' · ') || 'No address') + pin + '</div>' +
+        (s.flag ? '<div class="flag">' + WARN_SVG + '<span>' + esc(s.flag) + '</span></div>' : '') +
+        (dup ? '<div class="flag">' + WARN_SVG + '<span>Already in the guide as “' + esc(dup.name) + '”</span></div>' : '') +
+        '<div class="dir-row"><button type="button" class="dir-btn primary" data-sg-act="add">Add</button>' +
+          '<button type="button" class="dir-btn" data-sg-act="edit">Check &amp; edit</button>' +
+          '<button type="button" class="dir-btn" data-sg-act="dismiss">Dismiss</button></div>' +
+      '</div></div>';
+  }
+  function linkItemHtml(x){
+    const k = syncKey();
+    let st, btns = '', warn = false;
+    if (x.rejected){ warn = true; st = '<b>Couldn’t use this link</b><span class="lt-why">' + esc(x.rejected) + '</span>'; btns = '<button type="button" data-lk-act="retry">Try again</button><button type="button" class="plain" data-lk-act="drop">Remove</button>'; }
+    else if (x.closed){ st = '<b>Places found</b><span class="lt-why">They show here after the next update: tap “Update ready” when it appears.</span>'; btns = '<button type="button" class="plain" data-lk-act="drop">OK</button>'; }
+    else if (x.issue){ st = '<b>Reading the link…</b><span class="lt-why">Claude is looking for places. This takes a few minutes.</span>'; }
+    else { st = '<b>' + (k ? (syncBusy ? 'Sending…' : 'Waiting to send') : 'On this phone only') + '</b>'; btns = '<button type="button" data-lk-act="send">' + (k ? 'Send now' : 'Set up sharing') + '</button><button type="button" class="plain" data-lk-act="drop">Remove</button>'; }
+    return '<div class="link-item" data-lid="' + esc(x.id) + '"><div class="lk-host">' + esc(hostOf(x.url)) + '</div><div class="local-tag' + (warn ? ' warn' : '') + '">' + st + btns + '</div></div>';
+  }
+  function suggestionsHtml(){
+    const groups = openSuggestions(), links = readJson(LINKS_KEY, []).filter(x => !suggIds.has(x.id));
+    const here = groups.map(g => ({ s:g.s, places:g.places.filter(p => p.guide === GUIDE.id) })).filter(g => g.places.length);
+    const elsewhere = {};
+    groups.forEach(g => g.places.forEach(p => { if (p.guide !== GUIDE.id) elsewhere[p.guide] = (elsewhere[p.guide] || 0) + 1; }));
+    const other = Object.keys(elsewhere).map(id => { const g = GUIDES.find(x => x.id === id); return g ? plural(elsewhere[id], 'more') + ' in the ' + g.subtitle : ''; }).filter(Boolean);
+    if (!here.length && !links.length && !other.length) return '';
+    const n = here.reduce((a, g) => a + g.places.length, 0);
+    return '<section class="sugg-sec"><div class="district-heading">' + (n ? 'To review · ' + n + ' from links' : 'Links') + '</div>' +
+      (links.length ? '<div class="district-group link-group">' + links.map(linkItemHtml).join('') + '</div>' : '') +
+      here.map(g => '<div class="district-group sugg-group"><div class="sugg-src">From <a href="' + esc(g.s.url) + '" target="_blank" rel="noopener">' +
+          esc(g.s.title || hostOf(g.s.url)) + '</a>' + (g.s.by ? ' · sent by ' + esc(g.s.by) : '') + '</div>' +
+          g.places.map(p => suggCardHtml(g.s.id, p)).join('') + '</div>').join('') +
+      (other.length ? '<div class="sugg-more">' + esc(other.join(' · ')) + ' (switch guide to review)</div>' : '') +
+      '</section>';
+  }
+
   /* ---------- Sync: spots and photos leave the phone by themselves once a sync key is set ----------
      Each thing is saved on the phone first. With a key and a connection, the app files a GitHub issue for it; a GitHub job
      (tools/inbox.py) checks it and adds it to the guide, and everyone gets it with their next update. */
@@ -1552,7 +1687,10 @@
   async function sendSpots(){
     for (const p of userPlaces.slice()){
       if (!inThisGuide(p) || sharedIds.has(p.id) || p.issue || p.rejected) continue;
-      const n = await postIssue('[new-spot] ' + p.name, { guide:GUIDE.id, id:p.id, name:p.name, zh:p.zh || '', cat:p.cat, district:p.district || '', addr:p.addr || '', note:p.note || '', lat:p.lat, lng:p.lng, approx:!!p.approx });
+      const fields = { name:p.name, zh:p.zh || '', cat:p.cat, district:p.district || '', addr:p.addr || '', note:p.note || '', lat:p.lat, lng:p.lng, approx:!!p.approx };
+      const n = p.review
+        ? await postIssue('[review] ' + p.name, { action:'add', sid:p.review.sid, i:p.review.i, spot:Object.assign(fields, { flag:p.flag || '' }) })
+        : await postIssue('[new-spot] ' + p.name, Object.assign({ guide:GUIDE.id, id:p.id }, fields));
       p.issue = n; p.sentAt = Date.now(); syncTouched = true; await saveUserPlaces(); await wait(1500);
     }
   }
@@ -1570,6 +1708,22 @@
       }
     }
   }
+  async function sendLinks(){
+    const l = readJson(LINKS_KEY, []);
+    for (const x of l){
+      if (x.issue || x.rejected) continue;
+      x.issue = await postIssue('[new-link] ' + hostOf(x.url), { id:x.id, url:x.url, guide:x.guide });
+      x.sentAt = Date.now(); syncTouched = true; writeJson(LINKS_KEY, l); await wait(1500);
+    }
+  }
+  async function sendDismissals(){
+    const l = readJson(DISMISS_KEY, []);
+    for (const d of l){
+      if (d.issue) continue;
+      d.issue = await postIssue('[review] dismiss ' + (d.name || ''), { action:'dismiss', sid:d.sid, i:d.i });
+      syncTouched = true; writeJson(DISMISS_KEY, l); await wait(1500);
+    }
+  }
   async function sendRemovals(){
     const l = readJson(REMOVALS_KEY, []);
     for (const r of l){
@@ -1583,6 +1737,8 @@
     const items = [];
     userPlaces.forEach(p => { if (inThisGuide(p) && p.issue && !sharedIds.has(p.id) && !p.rejected && !p.closed) items.push({ obj:p, n:p.issue, at:p.sentAt, save:saveUserPlaces }); });
     Object.values(photosBySpot).flat().forEach(r => { if (r.sent && !sharedPhotoIds.has(r.id) && !r.rejected && !r.closed) items.push({ obj:r, n:r.sent, at:r.sentAt, save:() => putRec(r) }); });
+    const links = readJson(LINKS_KEY, []);
+    links.forEach(x => { if (x.issue && !suggIds.has(x.id) && !x.rejected && !x.closed) items.push({ obj:x, n:x.issue, at:x.sentAt, save:() => writeJson(LINKS_KEY, links) }); });
     for (const it of items){
       if (Date.now() - (it.at || 0) < 90000) continue;
       const iss = await gh('GET', '/repos/' + SHARE_REPO + '/issues/' + it.n);
@@ -1604,16 +1760,20 @@
       return n + l.filter(r => !r.sent && !r.rejected && !sharedPhotoIds.has(r.id)).length;
     }, 0);
     const removals = readJson(REMOVALS_KEY, []).filter(r => !r.issue).length;
-    return { spots, photos, removals, total: spots + photos + removals };
+    const links = readJson(LINKS_KEY, []).filter(x => !x.issue && !x.rejected).length;
+    const reviews = readJson(DISMISS_KEY, []).filter(d => !d.issue).length;
+    return { spots, photos, removals, links, reviews, total: spots + photos + removals + links + reviews };
   }
   // sent, but the guide has not answered yet: keep checking now and then
   function awaitingAnswer(){
-    return userPlaces.some(p => inThisGuide(p) && p.issue && !sharedIds.has(p.id) && !p.rejected && !p.closed) ||
+    return readJson(LINKS_KEY, []).some(x => x.issue && !suggIds.has(x.id) && !x.rejected && !x.closed) ||
+      userPlaces.some(p => inThisGuide(p) && p.issue && !sharedIds.has(p.id) && !p.rejected && !p.closed) ||
       Object.values(photosBySpot).flat().some(r => r.sent && !sharedPhotoIds.has(r.id) && !r.rejected && !r.closed);
   }
   const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
   function pendingText(c){
-    return [c.spots && plural(c.spots, 'spot'), c.photos && plural(c.photos, 'photo'), c.removals && plural(c.removals, 'photo removal')].filter(Boolean).join(', ');
+    return [c.spots && plural(c.spots, 'spot'), c.photos && plural(c.photos, 'photo'), c.removals && plural(c.removals, 'photo removal'),
+      c.links && plural(c.links, 'link'), c.reviews && plural(c.reviews, 'dismissed suggestion')].filter(Boolean).join(', ');
   }
 
   async function syncNow(manual){
@@ -1622,7 +1782,7 @@
     if (!navigator.onLine){ updateSyncUi(); if (manual) toast('No connection. It will send as soon as you’re online.'); return; }
     syncBusy = true; syncErr = null; syncTouched = false; updateSyncUi();
     try{
-      await sendSpots(); await sendPhotos(); await sendRemovals(); await checkSent();
+      await sendSpots(); await sendPhotos(); await sendRemovals(); await sendLinks(); await sendDismissals(); await checkSent();
       if (manual) toast(pendingCounts().total ? 'Some items are still waiting.' : 'Everything is sent.');
     } catch(e){
       syncErr = e.code || 'net';
@@ -1698,6 +1858,8 @@
   });
   function startSync(){
     writeJson(REMOVALS_KEY, readJson(REMOVALS_KEY, []).filter(r => !r.issue || sharedPhotoIds.has(r.id)));     // a removal is done once the photo is gone from the guide
+    writeJson(LINKS_KEY, readJson(LINKS_KEY, []).filter(x => !suggIds.has(x.id) && !(x.closed && Date.now() - (x.sentAt || 0) > 3 * 864e5)));   // its suggestions have arrived
+    writeJson(DISMISS_KEY, readJson(DISMISS_KEY, []).filter(d => suggPlace(d.sid, d.i)));                  // gone from the guide's list: done
     updateSyncUi();
     setTimeout(() => syncNow(), 2000);
     window.addEventListener('online', () => syncNow());

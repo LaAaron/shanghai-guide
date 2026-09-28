@@ -10,7 +10,7 @@ import hashlib, json, os, re
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PRECACHE = ['index.html', 'app.css', 'app.js', 'pwa.js', 'manifest.webmanifest', 'vendor/leaflet.css', 'vendor/leaflet.js',
-            'data/guides.js', 'data/photos.js',
+            'data/guides.js', 'data/photos.js', 'data/suggestions.js',
             'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/icon.svg']
 # every guide's own data files are saved for offline use, whichever guide is showing
 m = re.search(r'SG\.GUIDES = (\[.*\]);', open(os.path.join(ROOT, 'data', 'guides.js'), encoding='utf-8').read(), re.S)

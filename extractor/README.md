@@ -4,8 +4,10 @@ Paste an Instagram or TikTok link, or any web page / blog link, and get back the
 spot format (the same fields as `data/added.js`), using the guide's categories and districts, for Shanghai and Shenzhen
 (and any guide added to `data/guides.js` later).
 
-**It does not touch the app.** Nothing here is loaded by the app, and nothing is added to the guide. Results are shown on
-a test page and saved in `extractor/results/` for a later step.
+The app uses it for links sent from a phone: the inbox job (`tools/inbox.py`, run by GitHub) calls `extract.extract()`
+and puts the places in `data/suggestions.js` for review in the app. There the keys come from the repository's secrets
+(`ANTHROPIC_API_KEY`, `APIFY_TOKEN`, optionally `AMAP_KEY`). On the Mac, the test page below shows the same results
+without adding anything to the guide; they are saved in `extractor/results/`.
 
 ## How it works
 1. **Get the material.**
