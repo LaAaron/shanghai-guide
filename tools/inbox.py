@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The shared guide's inbox. The app files GitHub issues; this turns the valid ones into data files.
 
-Issues it understands (title prefix):   [new-spot]  [new-photo]  [remove-photo]  [new-link]  [review]
+Issues it understands (title prefix):   [new-spot]  [edit-spot]  [new-photo]  [remove-photo]  [new-link]  [review]
 [new-link] runs extractor/ on the link (Claude + Apify, keys from the repository's secrets) and saves the places it finds in
 data/suggestions.js; [review] adds one of them to the guide or dismisses it.
 Everything in an issue is UNTRUSTED. It is parsed as JSON, validated field by field, images are decoded and re-encoded
@@ -176,6 +176,28 @@ def handle_spot(user, body, created=None):
     raise Done('added', 'Added "%s". It will be live in about a minute; open the app while online and tap "Update ready".' % spot['name'], spot['name'])
 
 
+# ---------------------------------------------------------------- [edit-spot]: change a spot that was added through the app
+def handle_edit(user, body, created=None):
+    check_user(user)
+    raw = json_block(body, 20000)
+    g = guide_of(raw)
+    sid = ident(raw, 'id')
+    added = load_added(g)
+    i = next((k for k, a in enumerate(added) if a.get('id') == sid), None)
+    if i is None: raise Done('rejected', 'Only spots added through the app can be edited, and this one was not found.')
+    old = added[i]
+    edited = raw.get('spot') if isinstance(raw.get('spot'), dict) else {}
+    fields = dict(old, **{k: edited[k] for k in EDITABLE if k in edited})
+    fields['id'] = sid
+    if not fields.get('flag'): fields.pop('flag', None)
+    spot = spot_from(fields, g, user)
+    spot['by'], spot['at'] = old.get('by', spot['by']), old.get('at', spot['at'])     # still credited to whoever added it
+    if spot == old: raise Done('duplicate', 'Nothing changed in "%s".' % spot['name'], spot['name'])
+    added[i] = spot
+    save_added(added, g)
+    raise Done('added', 'Updated "%s". It will be live in about a minute; open the app while online and tap "Update ready".' % spot['name'], spot['name'])
+
+
 # ---------------------------------------------------------------- [new-link]: find places in a link, for review
 SUGGESTIONS = 'data/suggestions.js'
 EDITABLE = ('name', 'zh', 'cat', 'district', 'addr', 'note', 'lat', 'lng', 'approx', 'flag', 'src')
@@ -316,7 +338,7 @@ def handle_remove(user, body, created=None):
     raise Done('added', 'Photo removed.', pid)
 
 
-HANDLERS = {'[new-spot]': handle_spot, '[new-photo]': handle_photo, '[remove-photo]': handle_remove, '[new-link]': handle_link, '[review]': handle_review}
+HANDLERS = {'[new-spot]': handle_spot, '[edit-spot]': handle_edit, '[new-photo]': handle_photo, '[remove-photo]': handle_remove, '[new-link]': handle_link, '[review]': handle_review}
 
 
 # ---------------------------------------------------------------- GitHub plumbing

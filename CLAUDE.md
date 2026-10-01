@@ -21,5 +21,5 @@ Offline map + food guide, a static PWA on GitHub Pages: https://laaaron.github.i
 ## Traps
 - Basemap tiles and pins are GCJ-02 (China's offset system); OpenStreetMap and phone GPS are WGS-84. Convert with `wgs2gcj` in `app.js` (skips points outside China). Mixing them puts things ~500 m off.
 - Shanghai's road/area labels and detailed tiles only cover about 1 km around the original 88 spots; spots elsewhere get the coarse map. Shenzhen has detailed tiles only around Futian (about 4 km across) and no name labels yet; more detail is built around its spots when they are known. The original Shanghai tile generator no longer exists.
-- Existing spots' pins cannot be moved from inside the app; change coordinates in the data file.
+- Spots added through the app (`added.js`) can be edited in the app (Edit button, incl. moving the pin), which files an `[edit-spot]` issue. The original 88 built-in Shanghai spots (`data/places.js`) cannot; change those in the data file.
 - Testing: the dev server disables the service worker; test offline/update behaviour on the live URL. `xcrun` needs `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`; Device Hub replaces Simulator.app.

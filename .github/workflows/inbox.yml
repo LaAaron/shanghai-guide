@@ -1,6 +1,6 @@
 name: Inbox
 
-# The app files issues titled "[new-spot]", "[new-photo]", "[remove-photo]", "[new-link]" or "[review]". This job reads every
+# The app files issues titled "[new-spot]", "[edit-spot]", "[new-photo]", "[remove-photo]", "[new-link]" or "[review]". This job reads every
 # open one (oldest first), validates it with tools/inbox.py, changes the data files, publishes, then comments on and closes
 # each issue. "[new-link]" runs extractor/ (Claude + Apify) with the ANTHROPIC_API_KEY and APIFY_TOKEN repository secrets.
 # Runs are queued one at a time, and each run sweeps ALL open inbox issues, so nothing is lost if runs pile up.
@@ -23,6 +23,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       startsWith(github.event.issue.title, '[new-spot]') ||
+      startsWith(github.event.issue.title, '[edit-spot]') ||
       startsWith(github.event.issue.title, '[new-photo]') ||
       startsWith(github.event.issue.title, '[remove-photo]') ||
       startsWith(github.event.issue.title, '[new-link]') ||

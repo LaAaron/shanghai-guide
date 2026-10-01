@@ -81,6 +81,7 @@
   }
 
   const sharedIds = new Set(ADDED_PLACES.map(p => p.id));
+  const SHARED_ORIG = new Map(ADDED_PLACES.map(p => [p.id, Object.assign({}, p)]));    // as published, before this phone's edits
   const suggIds = new Set(SUGGESTIONS.map(s => s.id));
   // built-in spots + spots shared by anyone in the group + spots saved only on this phone (until they arrive as shared)
   function allPlaces(){ return SEED_PLACES.concat(ADDED_PLACES, userPlaces.filter(p => inThisGuide(p) && !sharedIds.has(p.id))); }
@@ -199,7 +200,9 @@
         '<div class="dir-row"><button type="button" class="dir-btn primary" data-act="dir">Directions</button>' +
           (hasCoords ? '<button type="button" class="dir-btn" data-act="map">Show on map</button>' : '') +
           photoBtnHtml(p.id, 'data-act="photos"') +
+          (canEdit(p) ? '<button type="button" class="dir-btn" data-act="edit">Edit</button>' : '') +
         '</div>' +
+        editTagHtml(p) +
       '</div></div>';
   }
 
@@ -250,6 +253,7 @@
     const id = card.dataset.id;
     if (btn && btn.dataset.act === 'dir'){ openDirections(id); return; }
     if (btn && btn.dataset.act === 'photos'){ openPhotos(id); return; }
+    if (btn && btn.dataset.act === 'edit'){ editPlace(id); return; }
     if (btn && btn.dataset.act === 'share'){ sharePlace(id); return; }
     if (btn && btn.dataset.act === 'retry'){ retryPlace(id); return; }
     if (btn && btn.dataset.act === 'remove'){ removeLocalPlace(id); return; }
@@ -291,6 +295,7 @@
       srcHtml(p, 'src-link pp-src') +
       '<div class="dir-row"><button type="button" class="dir-btn primary" data-dir="' + esc(p.id) + '">Directions</button>' +
         photoBtnHtml(p.id, 'data-photos="' + esc(p.id) + '"') +
+        (canEdit(p) ? '<button type="button" class="dir-btn" data-edit="' + esc(p.id) + '">Edit</button>' : '') +
         (p.userAdded && !p.issue ? '<button type="button" class="dir-btn" data-share="' + esc(p.id) + '">' + (syncKey() ? 'Send now' : 'Set up sharing') + '</button>' : '') + '</div></div>';
   }
 
@@ -942,7 +947,7 @@
   const growBoxes = [$('f-addr'), $('f-note')];
   function fitBoxes(){ growBoxes.forEach(el => { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }); }
   growBoxes.forEach(el => el.addEventListener('input', fitBoxes));
-  const addSheet = makeSheet($('add-sheet-backdrop'), $('add-sheet'), () => { if (!picking){ clearPickMarker(); if (editingReview) endReviewEdit(); } });
+  const addSheet = makeSheet($('add-sheet-backdrop'), $('add-sheet'), () => { if (!picking){ clearPickMarker(); if (editingReview || editingPlace) endReviewEdit(); } });
   const addForm = $('add-form');
   addForm.addEventListener('reset', () => setTimeout(fitBoxes));
   const catSelect = $('f-cat');
@@ -956,8 +961,77 @@
 
   $('add-btn').addEventListener('click', () => { dismissQuick(true); $('link-msg').textContent = ''; addSheet.open(); fitBoxes(); });
   $('cancel-add').addEventListener('click', () => { addSheet.close(); });
-  function setReviewMode(on){ $('add-title').textContent = on ? 'Check and add' : 'Add a find'; $('link-part').hidden = on; }
-  function endReviewEdit(){ editingReview = null; addForm.reset(); resetLoc(); setReviewMode(false); }
+  function setReviewMode(on, title){ $('add-title').textContent = on ? title || 'Check and add' : 'Add a find'; $('link-part').hidden = on; }
+  function endReviewEdit(){ editingReview = null; editingPlace = null; addForm.reset(); resetLoc(); setReviewMode(false); }
+
+  // ---- editing a spot after it was added: spots added through the app (shared or still on this phone), not the built-in ones
+  let editingPlace = null;                       // { id, local } while the form is editing an existing spot
+  function canEdit(p){
+    if (sharedIds.has(p.id)) return true;
+    const mine = userPlaces.find(x => x.id === p.id);
+    return !!(mine && (!mine.issue || mine.rejected));           // once sent, wait until it is in the guide
+  }
+  function editPlace(id){
+    const p = findPlace(id); if (!p || !canEdit(p)) return;
+    dismissQuick(true);
+    addForm.reset(); resetLoc(); editingReview = null;
+    editingPlace = { id, local: !sharedIds.has(id) };
+    setReviewMode(true, 'Edit place');
+    $('f-name').value = p.name || ''; $('f-zh').value = p.zh || '';
+    catSelect.value = CATEGORIES[p.cat] ? p.cat : 'other';
+    $('f-district').value = p.district && p.district !== 'Unsorted' ? p.district : '';
+    $('f-addr').value = p.addr || ''; $('f-note').value = p.note || ''; $('f-src').value = p.src || '';
+    if (p.lat && p.lng) setLoc(p.lat, p.lng, p.approx ? 'current pin, approximate' : 'current pin');
+    fitBoxes();
+    addSheet.open();
+  }
+  async function saveEdit(ep, place){
+    const old = findPlace(ep.id); if (!old) return;
+    const moved = place.lat == null ? old.lat != null : old.lat == null || Math.abs(place.lat - old.lat) > 1e-6 || Math.abs(place.lng - old.lng) > 1e-6;
+    const fields = { name:place.name, zh:place.zh, cat:place.cat, district:place.district, addr:place.addr, note:place.note,
+      lat:place.lat, lng:place.lng, approx: moved ? false : !!old.approx, flag: moved ? '' : old.flag || '', src:place.src || '' };
+    if (Object.keys(fields).every(k => (old[k] == null ? '' : old[k]) === (fields[k] == null ? '' : fields[k]))){ toast('Nothing changed.'); return; }
+    if (ep.local){                                 // still only on this phone: change it here; it is sent with the changes
+      const mine = userPlaces.find(x => x.id === ep.id); if (!mine) return;
+      Object.assign(mine, fields); if (!fields.flag) delete mine.flag; if (!fields.src) delete mine.src;
+      delete mine.rejected; delete mine.issue; delete mine.closed;
+      await saveUserPlaces(); render();
+      if (syncKey()){ toast('Changes saved. Sending…'); syncNow(); } else toast('Changes saved on this phone.');
+      return;
+    }
+    const edits = readJson(EDITS_KEY, []).filter(x => !(x.id === ep.id && x.guide === GUIDE.id && !x.issue));    // an unsent edit is replaced
+    edits.push({ id:ep.id, guide:GUIDE.id, name:fields.name, fields, at:Date.now() });
+    writeJson(EDITS_KEY, edits); applyEdits(); render(); updateSyncUi();
+    if (syncKey()){ toast('Changes saved. Sending them to the guide…'); syncNow(); }
+    else toast('Changes saved on this phone. Add the sync key to share them.', { action:'Add key', ms:9000, onAction: openSync });
+  }
+  // lay this phone's edits over the published spots, and forget edits that have arrived or were answered long ago
+  function applyEdits(){
+    const all = readJson(EDITS_KEY, []);
+    const same = (a, b) => Object.keys(b).every(k => (a[k] == null ? '' : a[k]) === (b[k] == null ? '' : b[k]));
+    const keep = all.filter(x => {
+      if (x.guide !== GUIDE.id) return true;
+      const orig = SHARED_ORIG.get(x.id);
+      if (!orig || same(orig, x.fields)) return false;                       // gone, or the guide already has these changes
+      return !(x.closedAt && Date.now() - x.closedAt > 3 * 864e5);
+    });
+    if (keep.length !== all.length) writeJson(EDITS_KEY, keep);
+    ADDED_PLACES.forEach(p => {
+      const orig = SHARED_ORIG.get(p.id);
+      Object.keys(p).forEach(k => { if (!(k in orig)) delete p[k]; });
+      Object.assign(p, orig);
+      keep.filter(x => x.guide === GUIDE.id && x.id === p.id && !x.rejected).forEach(x => {
+        Object.assign(p, x.fields);
+        if (!x.fields.flag) delete p.flag; if (!x.fields.src) delete p.src;
+      });
+    });
+  }
+  function editTagHtml(p){
+    const x = readJson(EDITS_KEY, []).filter(y => y.guide === GUIDE.id && y.id === p.id && !y.rejected && !y.closedAt).pop();
+    if (!x) return '';
+    return '<div class="local-tag"><b>' + (x.issue ? 'Changes sent' : syncKey() ? 'Changes waiting to send' : 'Changes on this phone only') + '</b>' +
+      '<span class="lt-why">' + (x.issue ? 'Everyone gets them with their next update.' : syncKey() ? 'They go out when you’re online.' : 'Add the sync key to share them.') + '</span></div>';
+  }
 
   // ---- location: GPS (converted to the map's coordinate system), tap on the map, or typed
   // China's maps are drawn in GCJ-02, a deliberately shifted system. A phone's GPS reports plain WGS-84, so it must be
@@ -1078,6 +1152,8 @@
   document.addEventListener('click', e => {
     const b = e.target.closest && e.target.closest('[data-share]');
     if (b) sharePlace(b.getAttribute('data-share'));
+    const ed = e.target.closest && e.target.closest('[data-edit]');
+    if (ed){ if (map) map.closePopup(); editPlace(ed.getAttribute('data-edit')); }
   });
 
   addForm.addEventListener('submit', async e => {
@@ -1089,7 +1165,7 @@
     const lat = parseFloat($('f-lat').value);
     const lng = parseFloat($('f-lng').value);
     if (isFinite(lat) && isFinite(lng) && !inArea(lat, lng)){ showLoc('That’s outside the ' + GUIDE.place + ' area this guide covers, so it can’t be pinned. Pick a spot on the map instead.', 'err'); return; }
-    const rv = editingReview;
+    const rv = editingReview, ep = editingPlace;
     const place = {
       id: rv ? rv.spot.id : 'u-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8),
       name: name,
@@ -1105,6 +1181,12 @@
       guide: GUIDE.id
     };
     if (src) place.src = src;
+    if (ep){
+      editingPlace = null; setReviewMode(false);
+      addForm.reset(); resetLoc(); addSheet.close();
+      await saveEdit(ep, place);
+      return;
+    }
     if (rv){                                       // a checked suggestion: keep its warning unless the pin was moved
       place.review = { sid: rv.sid, i: rv.i };
       const s = rv.spot, same = place.lat == null ? s.lat == null : s.lat != null && Math.abs(place.lat - s.lat) < 1e-6 && Math.abs(place.lng - s.lng) < 1e-6;
@@ -1666,7 +1748,7 @@
   /* ---------- Sync: spots and photos leave the phone by themselves once a sync key is set ----------
      Each thing is saved on the phone first. With a key and a connection, the app files a GitHub issue for it; a GitHub job
      (tools/inbox.py) checks it and adds it to the guide, and everyone gets it with their next update. */
-  const KEY_LS = 'sg-sync-key', NAME_LS = 'sg-sync-name', REMOVALS_KEY = 'sg-photo-removals';
+  const KEY_LS = 'sg-sync-key', NAME_LS = 'sg-sync-name', REMOVALS_KEY = 'sg-photo-removals', EDITS_KEY = 'sg-edits';
   function readJson(k, d){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch(e){ return d; } }
   function writeJson(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); } catch(e){} }
   const lsGet = k => { try{ return (localStorage.getItem(k) || '').trim(); } catch(e){ return ''; } };
@@ -1729,6 +1811,14 @@
       p.issue = n; p.sentAt = Date.now(); syncTouched = true; await saveUserPlaces(); await wait(1500);
     }
   }
+  async function sendEdits(){
+    const l = readJson(EDITS_KEY, []);
+    for (const x of l){
+      if (x.issue || x.rejected) continue;
+      x.issue = await postIssue('[edit-spot] ' + x.name, { guide:x.guide, id:x.id, spot:x.fields });
+      x.sentAt = Date.now(); syncTouched = true; writeJson(EDITS_KEY, l); await wait(1500);
+    }
+  }
   async function sendPhotos(){
     for (const spot of Object.keys(photosBySpot)){
       const sp = findPlace(spot); if (!sp) continue;
@@ -1774,6 +1864,8 @@
     Object.values(photosBySpot).flat().forEach(r => { if (r.sent && !sharedPhotoIds.has(r.id) && !r.rejected && !r.closed) items.push({ obj:r, n:r.sent, at:r.sentAt, save:() => putRec(r) }); });
     const links = readJson(LINKS_KEY, []);
     links.forEach(x => { if (x.issue && !suggIds.has(x.id) && !x.rejected && !x.closed) items.push({ obj:x, n:x.issue, at:x.sentAt, save:() => writeJson(LINKS_KEY, links) }); });
+    const edits = readJson(EDITS_KEY, []);
+    edits.forEach(x => { if (x.issue && !x.rejected && !x.closedAt) items.push({ obj:x, n:x.issue, at:x.sentAt, save:() => writeJson(EDITS_KEY, edits), edit:true }); });
     for (const it of items){
       if (Date.now() - (it.at || 0) < 90000) continue;
       const iss = await gh('GET', '/repos/' + SHARE_REPO + '/issues/' + it.n);
@@ -1782,8 +1874,13 @@
         const cs = await gh('GET', '/repos/' + SHARE_REPO + '/issues/' + it.n + '/comments?per_page=10');
         const ours = cs.filter(c => c.user && c.user.login === 'github-actions[bot]');
         it.obj.rejected = String((ours.length ? ours[ours.length - 1].body : '') || 'The guide did not accept this.').slice(0, 240);
-      } else it.obj.closed = true;
+      } else if (it.edit) it.obj.closedAt = Date.now();
+      else it.obj.closed = true;
       syncTouched = true; await it.save();
+      if (it.edit && it.obj.rejected){                // a refused edit is dropped, so the spot shows what the guide has
+        toast('Your changes to “' + it.obj.name + '” were not accepted: ' + it.obj.rejected, { ms:10000 });
+        writeJson(EDITS_KEY, edits.filter(y => y !== it.obj)); applyEdits();
+      }
     }
   }
 
@@ -1797,18 +1894,20 @@
     const removals = readJson(REMOVALS_KEY, []).filter(r => !r.issue).length;
     const links = readJson(LINKS_KEY, []).filter(x => !x.issue && !x.rejected).length;
     const reviews = readJson(DISMISS_KEY, []).filter(d => !d.issue).length;
-    return { spots, photos, removals, links, reviews, total: spots + photos + removals + links + reviews };
+    const edits = readJson(EDITS_KEY, []).filter(x => !x.issue && !x.rejected).length;
+    return { spots, photos, removals, links, reviews, edits, total: spots + photos + removals + links + reviews + edits };
   }
   // sent, but the guide has not answered yet: keep checking now and then
   function awaitingAnswer(){
     return readJson(LINKS_KEY, []).some(x => x.issue && !suggIds.has(x.id) && !x.rejected && !x.closed) ||
+      readJson(EDITS_KEY, []).some(x => x.issue && !x.rejected && !x.closedAt) ||
       userPlaces.some(p => inThisGuide(p) && p.issue && !sharedIds.has(p.id) && !p.rejected && !p.closed) ||
       Object.values(photosBySpot).flat().some(r => r.sent && !sharedPhotoIds.has(r.id) && !r.rejected && !r.closed);
   }
   const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
   function pendingText(c){
     return [c.spots && plural(c.spots, 'spot'), c.photos && plural(c.photos, 'photo'), c.removals && plural(c.removals, 'photo removal'),
-      c.links && plural(c.links, 'link'), c.reviews && plural(c.reviews, 'dismissed suggestion')].filter(Boolean).join(', ');
+      c.links && plural(c.links, 'link'), c.reviews && plural(c.reviews, 'dismissed suggestion'), c.edits && plural(c.edits, 'edit')].filter(Boolean).join(', ');
   }
 
   async function syncNow(manual){
@@ -1817,7 +1916,7 @@
     if (!navigator.onLine){ updateSyncUi(); if (manual) toast('No connection. It will send as soon as you’re online.'); return; }
     syncBusy = true; syncErr = null; syncTouched = false; updateSyncUi();
     try{
-      await sendSpots(); await sendPhotos(); await sendRemovals(); await sendLinks(); await sendDismissals(); await checkSent();
+      await sendSpots(); await sendEdits(); await sendPhotos(); await sendRemovals(); await sendLinks(); await sendDismissals(); await checkSent();
       if (manual) toast(pendingCounts().total ? 'Some items are still waiting.' : 'Everything is sent.');
     } catch(e){
       syncErr = e.code || 'net';
@@ -1935,6 +2034,7 @@
     } catch(err){
       userPlaces = [];
     }
+    applyEdits();
     await loadPhotos();
     render();
     startSync();
