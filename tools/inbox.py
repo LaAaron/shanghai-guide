@@ -184,16 +184,23 @@ def handle_edit(user, body, created=None):
     sid = ident(raw, 'id')
     added = load_added(g)
     i = next((k for k, a in enumerate(added) if a.get('id') == sid), None)
-    if i is None: raise Done('rejected', 'Only spots added through the app can be edited, and this one was not found.')
-    old = added[i]
+    # A built-in spot (places.js, written by hand) is never rewritten: its edited copy goes into added.js under the
+    # same id, and the app shows that copy instead of the original.
+    if i is None and sid not in seed_ids(g): raise Done('rejected', 'That spot was not found in the guide.')
+    old = added[i] if i is not None else {}
     edited = raw.get('spot') if isinstance(raw.get('spot'), dict) else {}
+    if i is None and not all(k in edited for k in ('name', 'cat')): raise Done('rejected', 'The edit is missing the spot\'s details.')
     fields = dict(old, **{k: edited[k] for k in EDITABLE if k in edited})
     fields['id'] = sid
+    fields['who'] = raw.get('who', '')
     if not fields.get('flag'): fields.pop('flag', None)
     spot = spot_from(fields, g, user)
-    spot['by'], spot['at'] = old.get('by', spot['by']), old.get('at', spot['at'])     # still credited to whoever added it
-    if spot == old: raise Done('duplicate', 'Nothing changed in "%s".' % spot['name'], spot['name'])
-    added[i] = spot
+    if i is not None:
+        spot['by'], spot['at'] = old.get('by', spot['by']), old.get('at', spot['at'])     # still credited to whoever added it
+        if spot == old: raise Done('duplicate', 'Nothing changed in "%s".' % spot['name'], spot['name'])
+        added[i] = spot
+    else:
+        added.append(spot)
     save_added(added, g)
     raise Done('added', 'Updated "%s". It will be live in about a minute; open the app while online and tap "Update ready".' % spot['name'], spot['name'])
 

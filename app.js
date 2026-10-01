@@ -81,10 +81,13 @@
   }
 
   const sharedIds = new Set(ADDED_PLACES.map(p => p.id));
-  const SHARED_ORIG = new Map(ADDED_PLACES.map(p => [p.id, Object.assign({}, p)]));    // as published, before this phone's edits
+  const seedIds = new Set(SEED_PLACES.map(p => p.id));
+  // a built-in spot that was edited has its edited copy in added.js under the same id: show the copy instead
+  const basePlaces = () => SEED_PLACES.filter(p => !sharedIds.has(p.id)).concat(ADDED_PLACES);
+  const ORIG = new Map(SEED_PLACES.concat(ADDED_PLACES).map(p => [p, Object.assign({}, p)]));    // as published, before this phone's edits
   const suggIds = new Set(SUGGESTIONS.map(s => s.id));
   // built-in spots + spots shared by anyone in the group + spots saved only on this phone (until they arrive as shared)
-  function allPlaces(){ return SEED_PLACES.concat(ADDED_PLACES, userPlaces.filter(p => inThisGuide(p) && !sharedIds.has(p.id))); }
+  function allPlaces(){ return basePlaces().concat(userPlaces.filter(p => inThisGuide(p) && !sharedIds.has(p.id))); }
   function districts(){ return Array.from(new Set(allPlaces().map(p => p.district))).sort(); }
   function findPlace(id){ return allPlaces().find(x => x.id === id); }
 
@@ -964,10 +967,10 @@
   function setReviewMode(on, title){ $('add-title').textContent = on ? title || 'Check and add' : 'Add a find'; $('link-part').hidden = on; }
   function endReviewEdit(){ editingReview = null; editingPlace = null; addForm.reset(); resetLoc(); setReviewMode(false); }
 
-  // ---- editing a spot after it was added: spots added through the app (shared or still on this phone), not the built-in ones
+  // ---- editing a spot: built-in spots, spots added through the app, and spots still only on this phone
   let editingPlace = null;                       // { id, local } while the form is editing an existing spot
   function canEdit(p){
-    if (sharedIds.has(p.id)) return true;
+    if (sharedIds.has(p.id) || seedIds.has(p.id)) return true;
     const mine = userPlaces.find(x => x.id === p.id);
     return !!(mine && (!mine.issue || mine.rejected));           // once sent, wait until it is in the guide
   }
@@ -975,7 +978,7 @@
     const p = findPlace(id); if (!p || !canEdit(p)) return;
     dismissQuick(true);
     addForm.reset(); resetLoc(); editingReview = null;
-    editingPlace = { id, local: !sharedIds.has(id) };
+    editingPlace = { id, local: !sharedIds.has(id) && !seedIds.has(id) };
     setReviewMode(true, 'Edit place');
     $('f-name').value = p.name || ''; $('f-zh').value = p.zh || '';
     catSelect.value = CATEGORIES[p.cat] ? p.cat : 'other';
@@ -1009,15 +1012,16 @@
   function applyEdits(){
     const all = readJson(EDITS_KEY, []);
     const same = (a, b) => Object.keys(b).every(k => (a[k] == null ? '' : a[k]) === (b[k] == null ? '' : b[k]));
+    const base = basePlaces(), origOf = id => { const b = base.find(p => p.id === id); return b && ORIG.get(b); };
     const keep = all.filter(x => {
       if (x.guide !== GUIDE.id) return true;
-      const orig = SHARED_ORIG.get(x.id);
+      const orig = origOf(x.id);
       if (!orig || same(orig, x.fields)) return false;                       // gone, or the guide already has these changes
       return !(x.closedAt && Date.now() - x.closedAt > 3 * 864e5);
     });
     if (keep.length !== all.length) writeJson(EDITS_KEY, keep);
-    ADDED_PLACES.forEach(p => {
-      const orig = SHARED_ORIG.get(p.id);
+    base.forEach(p => {
+      const orig = ORIG.get(p);
       Object.keys(p).forEach(k => { if (!(k in orig)) delete p[k]; });
       Object.assign(p, orig);
       keep.filter(x => x.guide === GUIDE.id && x.id === p.id && !x.rejected).forEach(x => {
