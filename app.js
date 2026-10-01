@@ -938,8 +938,13 @@
   let picking = false, pickMarker = null, picker = null;
   function clearPickMarker(){ if (pickMarker && map){ map.removeLayer(pickMarker); } pickMarker = null; }
   let editingReview = null;                      // a suggested place being checked in the form before it's added: { sid, i, spot }
+  // Address and "Why you want to go" grow to show all their text (notes from links can be long)
+  const growBoxes = [$('f-addr'), $('f-note')];
+  function fitBoxes(){ growBoxes.forEach(el => { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }); }
+  growBoxes.forEach(el => el.addEventListener('input', fitBoxes));
   const addSheet = makeSheet($('add-sheet-backdrop'), $('add-sheet'), () => { if (!picking){ clearPickMarker(); if (editingReview) endReviewEdit(); } });
   const addForm = $('add-form');
+  addForm.addEventListener('reset', () => setTimeout(fitBoxes));
   const catSelect = $('f-cat');
 
   Object.keys(CATEGORIES).forEach(key => {
@@ -949,7 +954,7 @@
     catSelect.appendChild(opt);
   });
 
-  $('add-btn').addEventListener('click', () => { dismissQuick(true); $('link-msg').textContent = ''; addSheet.open(); });
+  $('add-btn').addEventListener('click', () => { dismissQuick(true); $('link-msg').textContent = ''; addSheet.open(); fitBoxes(); });
   $('cancel-add').addEventListener('click', () => { addSheet.close(); });
   function setReviewMode(on){ $('add-title').textContent = on ? 'Check and add' : 'Add a find'; $('link-part').hidden = on; }
   function endReviewEdit(){ editingReview = null; addForm.reset(); resetLoc(); setReviewMode(false); }
@@ -1593,6 +1598,7 @@
       catSelect.value = CATEGORIES[s.cat] ? s.cat : 'other';
       $('f-district').value = s.district && s.district !== 'Unsorted' ? s.district : '';
       $('f-addr').value = s.addr || ''; $('f-note').value = s.note || ''; $('f-src').value = cleanSrc(x.url);
+      fitBoxes();
       if (s.lat != null && s.lng != null) setLoc(s.lat, s.lng, s.approx ? 'from the link, approximate' : 'from the link');
       addSheet.open();
     } else if (act === 'dismiss'){
