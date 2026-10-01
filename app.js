@@ -35,6 +35,24 @@
     other:     '<path d="M12 3.5l2.5 5.3 5.8.8-4.2 4.1 1 5.8L12 16.7l-5.1 2.8 1-5.8-4.2-4.1 5.8-.8z"/>'
   };
   const svgIcon = name => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[name] + '</svg>';
+  // the post or page a spot came from (a link sent from the app): shown on its card and map popup
+  const LINK_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 9.5l3-3M7 4.5l1.2-1.2a2.6 2.6 0 013.7 3.7L10.7 8.2M9 11.5l-1.2 1.2a2.6 2.6 0 01-3.7-3.7L5.3 7.8"/></svg>';
+  function cleanSrc(url){                        // social links lose their share-tracking part (?igsh=, ?stkn=...)
+    try {
+      const u = new URL(url);
+      if (!/^https?:$/.test(u.protocol)) return '';
+      if (/(^|\.)(instagram\.com|tiktok\.com)$/.test(u.hostname)){ u.search = ''; u.hash = ''; }
+      return u.href;
+    } catch (e){ return ''; }
+  }
+  function srcHtml(p, cls){
+    const href = p.src ? cleanSrc(p.src) : '';
+    if (!href) return '';
+    const u = new URL(href), host = u.hostname.replace(/^www\./, '');
+    const label = /(^|\.)instagram\.com$/.test(host) ? (/\/(reel|tv)\//.test(u.pathname) ? 'Instagram video' : 'Instagram post')
+      : /(^|\.)tiktok\.com$/.test(host) ? 'TikTok video' : host;
+    return '<a class="' + cls + '" href="' + esc(href) + '" target="_blank" rel="noopener noreferrer">' + LINK_SVG + '<span>From ' + esc(label) + '</span></a>';
+  }
   const WARN_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.2l6.2 11H1.8z"/><path d="M8 6.5v3.2M8 11.6v.1"/></svg>';
   const NAV_SVG = '<svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 4L4 10.5l6.5 2.5 2.5 6.5z"/></svg>';
   const CHEVRON_SVG = '<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg>';
@@ -172,6 +190,7 @@
         distHtml('dist', p) +
         '<div class="addr">' + esc(p.addr) + (p.approx ? ' · approximate pin' : '') + '</div>' +
         (p.flag ? '<div class="flag">' + WARN_SVG + '<span>' + esc(p.flag) + '</span></div>' : '') +
+        srcHtml(p, 'src-link') +
         (p.userAdded ? localTagHtml(p) : '') +
         '<div class="dir-row"><button type="button" class="dir-btn primary" data-act="dir">Directions</button>' +
           (hasCoords ? '<button type="button" class="dir-btn" data-act="map">Show on map</button>' : '') +
@@ -215,6 +234,7 @@
   }
 
   listPane.addEventListener('click', e => {
+    if (e.target.closest('a.src-link')) return;
     const sg = e.target.closest('[data-sg-act]');
     if (sg){ const c = sg.closest('.sugg-card'); suggestionAction(sg.dataset.sgAct, c.dataset.sid, +c.dataset.i); return; }
     const lk = e.target.closest('[data-lk-act]');
@@ -264,6 +284,7 @@
       distHtml('pp-dist', p) +
       '<div class="pp-addr">' + esc(p.addr) + (p.approx ? ' · approximate pin' : '') + '</div>' +
       (p.flag ? '<div class="pp-flag">' + esc(p.flag) + '</div>' : '') +
+      srcHtml(p, 'src-link pp-src') +
       '<div class="dir-row"><button type="button" class="dir-btn primary" data-dir="' + esc(p.id) + '">Directions</button>' +
         photoBtnHtml(p.id, 'data-photos="' + esc(p.id) + '"') +
         (p.userAdded && !p.issue ? '<button type="button" class="dir-btn" data-share="' + esc(p.id) + '">' + (syncKey() ? 'Send now' : 'Set up sharing') + '</button>' : '') + '</div></div>';
@@ -1074,6 +1095,7 @@
     };
     if (rv){                                       // a checked suggestion: keep its warning unless the pin was moved
       place.review = { sid: rv.sid, i: rv.i };
+      if (rv.src) place.src = rv.src;
       const s = rv.spot, same = place.lat == null ? s.lat == null : s.lat != null && Math.abs(place.lat - s.lat) < 1e-6 && Math.abs(place.lng - s.lng) < 1e-6;
       if (same){ place.approx = !!s.approx; if (s.flag) place.flag = s.flag; }
       editingReview = null; setReviewMode(false);
@@ -1521,7 +1543,8 @@
   const hostOf = u => { try{ return new URL(u).hostname.replace(/^www\./, ''); } catch(e){ return u; } };
   function suggPlace(sid, i){
     const s = SUGGESTIONS.find(x => x.id === sid);
-    return s ? s.places.find(p => p.i === i) : null;
+    const p = s ? s.places.find(y => y.i === i) : null;
+    return p ? Object.assign({ url:s.url }, p) : null;
   }
   // suggested places already dealt with on this phone (added or dismissed, maybe not sent yet)
   function reviewedKeys(){
@@ -1553,13 +1576,13 @@
     const x = suggPlace(sid, i); if (!x) return;
     const s = x.spot;
     if (act === 'add'){
-      userPlaces.push(Object.assign({}, s, { userAdded:true, guide:x.guide, review:{ sid, i } }));
+      userPlaces.push(Object.assign({}, s, { src:cleanSrc(x.url), userAdded:true, guide:x.guide, review:{ sid, i } }));
       await saveUserPlaces(); render();
       if (syncKey()){ toast('Added “' + s.name + '”. Sending it to the guide…'); syncNow(); }
       else toast('Added on this phone. Add the sync key to share it.', { action:'Add key', ms:9000, onAction: openSync });
     } else if (act === 'edit'){
       addForm.reset(); resetLoc();
-      editingReview = { sid, i, spot:s }; setReviewMode(true);
+      editingReview = { sid, i, spot:s, src:cleanSrc(x.url) }; setReviewMode(true);
       $('f-name').value = s.name || ''; $('f-zh').value = s.zh || '';
       catSelect.value = CATEGORIES[s.cat] ? s.cat : 'other';
       $('f-district').value = s.district && s.district !== 'Unsorted' ? s.district : '';

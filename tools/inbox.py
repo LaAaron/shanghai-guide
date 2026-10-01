@@ -15,7 +15,7 @@ Used by .github/workflows/inbox.yml, in two phases so nothing is closed unless t
 It is safe to run repeatedly: anything already in the guide comes back as "duplicate".
 Local testing without GitHub:  python3 tools/inbox.py local <spot|photo|remove|link|review> <github-login> < issue-body.txt
 """
-import base64, binascii, datetime, io, json, os, re, sys, urllib.error, urllib.request
+import base64, binascii, datetime, io, json, os, re, sys, urllib.error, urllib.parse, urllib.request
 
 ROOT = os.environ.get('ROOT') or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RESULTS = os.path.join(ROOT, 'inbox-results.json')
@@ -117,8 +117,17 @@ def known_spot_ids():
 
 
 # ---------------------------------------------------------------- [new-spot]
-def spot_from(raw, g, user):
-    """A validated spot for guide g from the submitted fields (the same checks for spots typed in and spots from links)."""
+def clean_src(url):
+    """The link a spot came from, safe to show in the app: http(s) only, and social links lose their share-tracking query."""
+    u = urllib.parse.urlsplit(url or '')
+    if u.scheme not in ('http', 'https') or not u.netloc or len(url) > 500: return ''
+    if re.search(r'(^|\.)(instagram\.com|tiktok\.com)$', u.hostname or ''): u = u._replace(query='', fragment='')
+    return urllib.parse.urlunsplit(u)
+
+
+def spot_from(raw, g, user, src=None):
+    """A validated spot for guide g from the submitted fields (the same checks for spots typed in and spots from links).
+    src is the link a reviewed suggestion came from; it is set here, never taken from what the app sent."""
     cats = re.findall(r'^\s+(\w+):\s*\{\s*label', rd(g['places']), re.M)
     spot = {}
     spot['id'] = ident(raw, 'id')
@@ -141,6 +150,7 @@ def spot_from(raw, g, user):
     spot['approx'] = raw.get('approx') is True            # only a real boolean; anything else means "exact"
     flag = text(raw, 'flag', 200)                         # a warning shown on the spot (spots from links whose location is uncertain)
     if flag: spot['flag'] = flag
+    if src and clean_src(src): spot['src'] = clean_src(src)
     spot['by'] = who(raw, user)
     spot['at'] = datetime.date.today().isoformat()
     return spot
@@ -240,7 +250,7 @@ def handle_review(user, body, created=None):
     fields = dict(p['spot'], **{k: edited[k] for k in EDITABLE if k in edited})
     fields['id'] = p['spot']['id']                        # the id is the suggestion's, whatever was sent
     fields['who'] = raw.get('who', '')
-    spot = spot_from(fields, g, user)
+    spot = spot_from(fields, g, user, src=s['url'])
     try:
         store_spot(spot, g)
     except Done as d:

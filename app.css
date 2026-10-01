@@ -204,6 +204,9 @@
     margin-top:8px; padding:6px 9px; border-radius:9px;
   }
   .place-card .flag svg{ width:14px; height:14px; flex:0 0 auto; margin-top:1px; }
+  .src-link{ display:inline-flex; gap:5px; align-items:center; margin-top:6px; font-size:13px; line-height:1.35; color:var(--accent-ink); text-decoration:none; }
+  .src-link svg{ width:14px; height:14px; flex:0 0 auto; }
+  .pp-src{ display:flex; margin-top:8px; }
   .dir-row{ display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
   .dir-btn{
     height:30px; padding:0 13px; border:0; border-radius:15px;
