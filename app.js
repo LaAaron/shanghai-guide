@@ -45,6 +45,10 @@
       return u.href;
     } catch (e){ return ''; }
   }
+  function addrLine(p){                          // address, plus a note when the pin is missing or only approximate
+    const pin = !(p.lat && p.lng) ? 'no pin' : p.approx ? 'approximate pin' : '';
+    return [p.addr, pin].filter(Boolean).join(' · ');
+  }
   function srcHtml(p, cls){
     const href = p.src ? cleanSrc(p.src) : '';
     if (!href) return '';
@@ -188,7 +192,7 @@
         (p.zh ? '<div class="zh">' + esc(p.zh) + '</div>' : '') +
         (p.note ? '<div class="note">' + esc(p.note) + '</div>' : '') +
         distHtml('dist', p) +
-        '<div class="addr">' + esc(p.addr) + (p.approx ? ' · approximate pin' : '') + '</div>' +
+        '<div class="addr">' + esc(addrLine(p)) + '</div>' +
         (p.flag ? '<div class="flag">' + WARN_SVG + '<span>' + esc(p.flag) + '</span></div>' : '') +
         srcHtml(p, 'src-link') +
         (p.userAdded ? localTagHtml(p) : '') +
@@ -282,7 +286,7 @@
       (p.zh ? '<div class="pp-zh">' + esc(p.zh) + '</div>' : '') +
       (p.note ? '<div class="pp-note">' + esc(p.note) + '</div>' : '') +
       distHtml('pp-dist', p) +
-      '<div class="pp-addr">' + esc(p.addr) + (p.approx ? ' · approximate pin' : '') + '</div>' +
+      '<div class="pp-addr">' + esc(addrLine(p)) + '</div>' +
       (p.flag ? '<div class="pp-flag">' + esc(p.flag) + '</div>' : '') +
       srcHtml(p, 'src-link pp-src') +
       '<div class="dir-row"><button type="button" class="dir-btn primary" data-dir="' + esc(p.id) + '">Directions</button>' +
@@ -1075,6 +1079,8 @@
     e.preventDefault();
     const name = $('f-name').value.trim();
     if (!name) return;
+    const srcIn = $('f-src').value.trim(), src = srcIn ? cleanSrc(/^https?:\/\//i.test(srcIn) ? srcIn : 'https://' + srcIn) : '';
+    if (srcIn && !src){ toast('That link doesn’t look right. Paste the whole link, or leave it empty.'); $('f-src').focus(); return; }
     const lat = parseFloat($('f-lat').value);
     const lng = parseFloat($('f-lng').value);
     if (isFinite(lat) && isFinite(lng) && !inArea(lat, lng)){ showLoc('That’s outside the ' + GUIDE.place + ' area this guide covers, so it can’t be pinned. Pick a spot on the map instead.', 'err'); return; }
@@ -1093,9 +1099,9 @@
       userAdded: true,
       guide: GUIDE.id
     };
+    if (src) place.src = src;
     if (rv){                                       // a checked suggestion: keep its warning unless the pin was moved
       place.review = { sid: rv.sid, i: rv.i };
-      if (rv.src) place.src = rv.src;
       const s = rv.spot, same = place.lat == null ? s.lat == null : s.lat != null && Math.abs(place.lat - s.lat) < 1e-6 && Math.abs(place.lng - s.lng) < 1e-6;
       if (same){ place.approx = !!s.approx; if (s.flag) place.flag = s.flag; }
       editingReview = null; setReviewMode(false);
@@ -1582,11 +1588,11 @@
       else toast('Added on this phone. Add the sync key to share it.', { action:'Add key', ms:9000, onAction: openSync });
     } else if (act === 'edit'){
       addForm.reset(); resetLoc();
-      editingReview = { sid, i, spot:s, src:cleanSrc(x.url) }; setReviewMode(true);
+      editingReview = { sid, i, spot:s }; setReviewMode(true);
       $('f-name').value = s.name || ''; $('f-zh').value = s.zh || '';
       catSelect.value = CATEGORIES[s.cat] ? s.cat : 'other';
       $('f-district').value = s.district && s.district !== 'Unsorted' ? s.district : '';
-      $('f-addr').value = s.addr || ''; $('f-note').value = s.note || '';
+      $('f-addr').value = s.addr || ''; $('f-note').value = s.note || ''; $('f-src').value = cleanSrc(x.url);
       if (s.lat != null && s.lng != null) setLoc(s.lat, s.lng, s.approx ? 'from the link, approximate' : 'from the link');
       addSheet.open();
     } else if (act === 'dismiss'){
@@ -1710,7 +1716,7 @@
   async function sendSpots(){
     for (const p of userPlaces.slice()){
       if (!inThisGuide(p) || sharedIds.has(p.id) || p.issue || p.rejected) continue;
-      const fields = { name:p.name, zh:p.zh || '', cat:p.cat, district:p.district || '', addr:p.addr || '', note:p.note || '', lat:p.lat, lng:p.lng, approx:!!p.approx };
+      const fields = { name:p.name, zh:p.zh || '', cat:p.cat, district:p.district || '', addr:p.addr || '', note:p.note || '', lat:p.lat, lng:p.lng, approx:!!p.approx, src:p.src || '' };
       const n = p.review
         ? await postIssue('[review] ' + p.name, { action:'add', sid:p.review.sid, i:p.review.i, spot:Object.assign(fields, { flag:p.flag || '' }) })
         : await postIssue('[new-spot] ' + p.name, Object.assign({ guide:GUIDE.id, id:p.id }, fields));

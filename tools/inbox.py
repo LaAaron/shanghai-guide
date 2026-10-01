@@ -127,7 +127,7 @@ def clean_src(url):
 
 def spot_from(raw, g, user, src=None):
     """A validated spot for guide g from the submitted fields (the same checks for spots typed in and spots from links).
-    src is the link a reviewed suggestion came from; it is set here, never taken from what the app sent."""
+    The spot's link is the one typed in the app, else src (the link a reviewed suggestion came from)."""
     cats = re.findall(r'^\s+(\w+):\s*\{\s*label', rd(g['places']), re.M)
     spot = {}
     spot['id'] = ident(raw, 'id')
@@ -150,7 +150,8 @@ def spot_from(raw, g, user, src=None):
     spot['approx'] = raw.get('approx') is True            # only a real boolean; anything else means "exact"
     flag = text(raw, 'flag', 200)                         # a warning shown on the spot (spots from links whose location is uncertain)
     if flag: spot['flag'] = flag
-    if src and clean_src(src): spot['src'] = clean_src(src)
+    link = clean_src(text(raw, 'src', 500)) or clean_src(src or '')
+    if link: spot['src'] = link
     spot['by'] = who(raw, user)
     spot['at'] = datetime.date.today().isoformat()
     return spot
@@ -177,7 +178,7 @@ def handle_spot(user, body, created=None):
 
 # ---------------------------------------------------------------- [new-link]: find places in a link, for review
 SUGGESTIONS = 'data/suggestions.js'
-EDITABLE = ('name', 'zh', 'cat', 'district', 'addr', 'note', 'lat', 'lng', 'approx', 'flag')
+EDITABLE = ('name', 'zh', 'cat', 'district', 'addr', 'note', 'lat', 'lng', 'approx', 'flag', 'src')
 
 def load_suggestions():
     if not os.path.exists(os.path.join(ROOT, SUGGESTIONS)): return []
