@@ -110,7 +110,7 @@ def to_spots(extracted, source_url):
                 lat = lng = None
         conf = p.get('location_confidence') or 'unknown'
         if lat is None: conf = 'unknown' if conf == 'exact' else conf
-        cat = p.get('cat') if p.get('cat') in cats else 'other'
+        cat = p.get('cat') if p.get('cat') in cats else 'meal' if 'meal' in cats else 'other'
         district = p.get('district') or 'Unsorted'
         if g is not None and district not in districts(g) and district not in ('Multiple', 'Unsorted'):
             warnings.append('District "%s" is not one the %s guide uses' % (district, g['place']))

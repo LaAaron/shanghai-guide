@@ -41,7 +41,8 @@ def system_prompt():
     lines += [
         'Use "other" as the city for places in any other city, and "Multiple" as the district for chains with no single branch.',
         '',
-        'Categories (pick the best fit; "other" for restaurants that fit none): ' +
+        'Categories (pick the best fit; "duck" for places known for duck (roast duck, Peking duck); "meal" for restaurants and '
+        'food places that fit none of the food kinds; "other" only for non-food places that fit none): ' +
         ', '.join('%s = %s' % (k, v) for k, v in cats.items()),
         '',
         'For each place:',

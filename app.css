@@ -142,6 +142,11 @@
   .chip:active{ transform:scale(.96); }
   .chip:disabled,.chip.dim{ opacity:.38; cursor:default; pointer-events:none; }         /* nothing of this kind in the chosen district */
   .chip.dim .dot{ filter:grayscale(1); }
+  .chip[hidden]{ display:none; }
+  .chip[data-cat="food"]{ gap:5px; padding-right:10px; }
+  .chip[data-cat="food"] svg{ width:10px; height:10px; transition:transform .18s var(--ease-out); }
+  .chip[data-cat="food"].open svg{ transform:rotate(-90deg); }
+  .chip-sub{ height:30px; padding:0 11px; font-size:13.5px; }                       /* the kinds of food, shown after Food */
   .chip-select{ padding-right:9px; gap:5px; }
   .chip-select svg{ width:10px; height:10px; opacity:.6; flex:0 0 auto; }
   .chip-select select{

@@ -32,6 +32,9 @@
     shopping:  '<path d="M5.5 8h13l1 12.5h-15z"/><path d="M9 8a3 3 0 0 1 6 0"/>',
     sights:    '<path d="M3.5 9.5L12 4l8.5 5.5z"/><path d="M6 12v6M10 12v6M14 12v6M18 12v6M3.5 20.5h17"/>',
     stay:      '<path d="M3.5 18.5V6.5"/><path d="M3.5 14h17v4.5"/><path d="M20.5 14v-2a3 3 0 0 0-3-3h-6.5v5"/><circle cx="7.2" cy="10.6" r="1.7"/>',
+    duck:      '<path d="M4 13.5h11.5a4.5 4.5 0 0 0 4.5-4.5V8.5"/><path d="M20 8.5a3 3 0 0 0-5.6-1.5l-1.4 2.5"/><path d="M20 8.5h1.8"/><path d="M4 13.5c0 3.6 3 6 7.5 6h1a5.5 5.5 0 0 0 5.5-5.5"/><circle cx="17" cy="7.2" r=".6" fill="currentColor"/>',
+    meal:      '<path d="M7 3.5v17M4.5 3.5v5a2.5 2.5 0 0 0 5 0v-5"/><path d="M17 20.5v-17c-2 1-3.5 3.5-3.5 7v3h3.5"/>',
+    food:      '<path d="M7 3.5v17M4.5 3.5v5a2.5 2.5 0 0 0 5 0v-5"/><path d="M17 20.5v-17c-2 1-3.5 3.5-3.5 7v3h3.5"/>',
     other:     '<path d="M12 3.5l2.5 5.3 5.8.8-4.2 4.1 1 5.8L12 16.7l-5.1 2.8 1-5.8-4.2-4.1 5.8-.8z"/>'
   };
   const svgIcon = name => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[name] + '</svg>';
@@ -95,8 +98,11 @@
     if (!searchTerm) return true;
     return (p.name + " " + (p.zh||"") + " " + p.addr + " " + (p.note||"")).toLowerCase().includes(searchTerm);
   }
+  // the Food chip covers every category marked group:"food" (breakfast, dumplings, duck, ...)
+  const isFood = cat => !!(CATEGORIES[cat] && CATEGORIES[cat].group === 'food');
+  const catMatches = (p, cat) => cat === 'all' || p.cat === cat || (cat === 'food' && isFood(p.cat));
   function matchesFilters(p){
-    if (activeCat !== "all" && p.cat !== activeCat) return false;
+    if (!catMatches(p, activeCat)) return false;
     if (activeDistrict !== "all" && p.district !== activeDistrict) return false;
     return matchesSearch(p);
   }
@@ -105,8 +111,11 @@
     const byCat = {}, byDist = {};
     allPlaces().forEach(p => {
       if (!matchesSearch(p)) return;
-      if (activeDistrict === "all" || p.district === activeDistrict) byCat[p.cat] = (byCat[p.cat] || 0) + 1;
-      if (activeCat === "all" || p.cat === activeCat) byDist[p.district] = (byDist[p.district] || 0) + 1;
+      if (activeDistrict === "all" || p.district === activeDistrict){
+        byCat[p.cat] = (byCat[p.cat] || 0) + 1;
+        if (isFood(p.cat)) byCat.food = (byCat.food || 0) + 1;
+      }
+      if (catMatches(p, activeCat)) byDist[p.district] = (byDist[p.district] || 0) + 1;
     });
     return { byCat, byDist };
   }
@@ -131,7 +140,7 @@
       ds.forEach(d => { const o = document.createElement('option'); o.value = d; o.textContent = d; sel.appendChild(o); });
       sel.addEventListener('change', () => {
         activeDistrict = sel.value;
-        if (activeCat !== 'all' && !allPlaces().some(p => p.cat === activeCat && (activeDistrict === 'all' || p.district === activeDistrict))) activeCat = 'all';   // nothing of that kind here
+        if (activeCat !== 'all' && !allPlaces().some(p => catMatches(p, activeCat) && (activeDistrict === 'all' || p.district === activeDistrict))) activeCat = 'all';   // nothing of that kind here
         render();
       });
       wrap.appendChild(sel);
@@ -143,10 +152,10 @@
       near.addEventListener('click', toggleNearest);
       catChipRow.appendChild(near);
 
-      const mk = (label, key, color) => {
+      const mk = (label, key, color, sub) => {
         const b = document.createElement('button');
         b.type = 'button';
-        b.className = 'chip';
+        b.className = 'chip' + (sub ? ' chip-sub' : '');
         b.dataset.cat = key;
         if (color){ const d = document.createElement('span'); d.className = 'dot'; d.style.background = color; b.appendChild(d); }
         b.appendChild(document.createTextNode(label));
@@ -154,7 +163,10 @@
         catChipRow.appendChild(b);
       };
       mk('All', 'all', null);
-      Object.keys(CATEGORIES).forEach(k => mk(CATEGORIES[k].label, k, CATEGORIES[k].color));
+      mk('Food', 'food', null);
+      catChipRow.lastChild.insertAdjacentHTML('beforeend', CHEVRON_SVG);
+      Object.keys(CATEGORIES).filter(isFood).forEach(k => mk(CATEGORIES[k].label, k, CATEGORIES[k].color, true));
+      Object.keys(CATEGORIES).filter(k => !isFood(k)).forEach(k => mk(CATEGORIES[k].label, k, CATEGORIES[k].color));
     }
     const { byCat, byDist } = chipCounts();
     const dsel = $('district-select');
@@ -178,6 +190,10 @@
       b.disabled = empty;
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
+    const foodOpen = activeCat === 'food' || isFood(activeCat);           // food kinds show while Food (or one of them) is picked
+    catChipRow.querySelectorAll('button.chip-sub').forEach(b => { b.hidden = !foodOpen; });
+    const fc = catChipRow.querySelector('button.chip[data-cat="food"]');
+    if (fc){ fc.classList.toggle('active', foodOpen); fc.classList.toggle('open', foodOpen); fc.setAttribute('aria-expanded', foodOpen ? 'true' : 'false'); }
   }
 
   function resetFilters(){
@@ -955,11 +971,13 @@
   addForm.addEventListener('reset', () => setTimeout(fitBoxes));
   const catSelect = $('f-cat');
 
+  const foodGroup = document.createElement('optgroup'); foodGroup.label = 'Food';
+  catSelect.appendChild(foodGroup);
   Object.keys(CATEGORIES).forEach(key => {
     const opt = document.createElement('option');
     opt.value = key;
     opt.textContent = CATEGORIES[key].label;
-    catSelect.appendChild(opt);
+    (isFood(key) ? foodGroup : catSelect).appendChild(opt);
   });
 
   $('add-btn').addEventListener('click', () => { dismissQuick(true); $('link-msg').textContent = ''; addSheet.open(); fitBoxes(); });
