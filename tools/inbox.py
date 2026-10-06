@@ -125,6 +125,19 @@ def clean_src(url):
     return urllib.parse.urlunsplit(u)
 
 
+DISTRICT_NAMES = ['Huangpu', 'Xuhui', 'Changning', "Jing'an", 'Putuo', 'Hongkou', 'Yangpu', 'Pudong', 'Minhang', 'Baoshan',
+                  'Jiading', 'Songjiang', 'Qingpu', 'Fengxian', 'Jinshan', 'Chongming', 'Futian', 'Luohu', 'Nanshan', 'Yantian',
+                  "Bao'an", 'Longgang', 'Longhua', 'Pingshan', 'Guangming', 'Dapeng']
+
+def tidy_addr(addr):
+    """Addresses copied from map apps often start with the province, city and district run together
+    ("GuangdongShenzhenFutianShennan Avenue No.6022"): move the district to the end, as the guide writes them."""
+    m = re.match(r"(?:Guangdong\s*)?(?:Shenzhen|Shanghai)(?:\s*Shi)?\s*(%s)?(?:\s*(?:District|Qu))?(?=[A-Z0-9])" % '|'.join(re.escape(d) for d in DISTRICT_NAMES), addr)
+    if not m or ' ' in m.group(0).strip(): return addr                         # only the glued-together kind
+    rest = addr[m.end():].strip(' ,')
+    return rest + (', ' + m.group(1) if m.group(1) and m.group(1) not in rest else '') if rest else addr
+
+
 def spot_from(raw, g, user, src=None):
     """A validated spot for guide g from the submitted fields (the same checks for spots typed in and spots from links).
     The spot's link is the one typed in the app, else src (the link a reviewed suggestion came from)."""
@@ -136,7 +149,7 @@ def spot_from(raw, g, user, src=None):
     spot['cat'] = raw.get('cat')
     if spot['cat'] not in cats: raise Done('rejected', 'Unknown category. Expected one of: %s.' % ', '.join(cats))
     spot['district'] = text(raw, 'district', 40) or 'Unsorted'
-    spot['addr'] = text(raw, 'addr', 200)
+    spot['addr'] = tidy_addr(text(raw, 'addr', 200))
     spot['note'] = text(raw, 'note', 200)
     lat, lng = raw.get('lat'), raw.get('lng')
     if (lat is None) != (lng is None): raise Done('rejected', 'Give both latitude and longitude, or neither.')
@@ -167,11 +180,27 @@ def store_spot(spot, g):
     save_added(added, g)
 
 
+def pin_from_address(spot, g):
+    """A spot with an address but no pin gets one from OpenStreetMap (extractor/geocode.py), marked approximate.
+    Any failure just leaves the spot without a pin."""
+    if spot.get('lat') is not None or not (spot.get('addr') or spot.get('zh')): return
+    try:
+        sys.path.insert(0, os.path.join(ROOT, 'extractor'))
+        import geocode
+        found = geocode.find_pin(spot, g)
+    except Exception as e:
+        print('pin lookup failed: %s' % e); return
+    if not found: return
+    spot['lat'], spot['lng'], spot['approx'] = found[0], found[1], True
+    spot['flag'] = ('Pin found from the address (at %s), so it may be a little off' % found[2])[:200]
+
+
 def handle_spot(user, body, created=None):
     check_user(user)
     raw = json_block(body, 20000)
     g = guide_of(raw)
     spot = spot_from(raw, g, user)
+    pin_from_address(spot, g)
     store_spot(spot, g)
     raise Done('added', 'Added "%s". It will be live in about a minute; open the app while online and tap "Update ready".' % spot['name'], spot['name'])
 
@@ -195,6 +224,7 @@ def handle_edit(user, body, created=None):
     fields['who'] = raw.get('who', '')
     if not fields.get('flag'): fields.pop('flag', None)
     spot = spot_from(fields, g, user)
+    pin_from_address(spot, g)
     if i is not None:
         spot['by'], spot['at'] = old.get('by', spot['by']), old.get('at', spot['at'])     # still credited to whoever added it
         if spot == old: raise Done('duplicate', 'Nothing changed in "%s".' % spot['name'], spot['name'])
@@ -245,6 +275,7 @@ def handle_link(user, body, created=None):
         base, n = sp['id'], 2
         while sp['id'] in taken: sp['id'], n = '%s-%d' % (base, n), n + 1
         taken.add(sp['id'])
+        pin_from_address(sp, next(gg for gg in guides() if gg['id'] == x['guide']))
         out.append({'i': i, 'guide': x['guide'], 'spot': sp, 'confidence': x['confidence'], 'evidence': x['evidence'][:120],
                     'duplicate_of': x['duplicate_of']})
     sugs.append({'id': lid, 'url': url, 'title': (r['title'] or '')[:120], 'summary': (r['summary'] or '')[:300], 'by': who(raw, user),
@@ -281,6 +312,7 @@ def handle_review(user, body, created=None):
     fields['id'] = p['spot']['id']                        # the id is the suggestion's, whatever was sent
     fields['who'] = raw.get('who', '')
     spot = spot_from(fields, g, user, src=s['url'])
+    pin_from_address(spot, g)
     try:
         store_spot(spot, g)
     except Done as d:

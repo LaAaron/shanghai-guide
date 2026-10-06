@@ -361,7 +361,7 @@
   function fitVisible(){
     if (!map) return;
     if (mapHidden()){ pendingView = 'fit'; return; }
-    const pts = allPlaces().filter(matchesFilters).filter(p => p.lat && p.lng && p.district !== 'Multiple' && !p.flag).map(p => [p.lat, p.lng]);
+    const pts = allPlaces().filter(matchesFilters).filter(p => p.lat && p.lng && p.district !== 'Multiple').map(p => [p.lat, p.lng]);
     if (!pts.length) return;
     const pad = mapPad();
     map.fitBounds(pts, { paddingTopLeft:[40, pad.top + 24], paddingBottomRight:[40, pad.bottom + 24], maxZoom:16 });
@@ -1003,7 +1003,9 @@
       return;
     }
     const edits = readJson(EDITS_KEY, []).filter(x => !(x.id === ep.id && x.guide === GUIDE.id && !x.issue));    // an unsent edit is replaced
-    edits.push({ id:ep.id, guide:GUIDE.id, name:fields.name, fields, at:Date.now() });
+    const b = basePlaces().find(p => p.id === ep.id), orig = b ? ORIG.get(b) : {};
+    const base = {}; Object.keys(fields).forEach(k => { base[k] = orig[k] == null ? '' : orig[k]; });   // what the guide had when this was edited
+    edits.push({ id:ep.id, guide:GUIDE.id, name:fields.name, fields, base, at:Date.now() });
     writeJson(EDITS_KEY, edits); applyEdits(); render(); updateSyncUi();
     if (syncKey()){ toast('Changes saved. Sending them to the guide…'); syncNow(); }
     else toast('Changes saved on this phone. Add the sync key to share them.', { action:'Add key', ms:9000, onAction: openSync });
@@ -1017,6 +1019,7 @@
       if (x.guide !== GUIDE.id) return true;
       const orig = origOf(x.id);
       if (!orig || same(orig, x.fields)) return false;                       // gone, or the guide already has these changes
+      if (x.base ? !same(orig, x.base) : x.closedAt) return false;           // the guide has a newer version of this spot
       return !(x.closedAt && Date.now() - x.closedAt > 3 * 864e5);
     });
     if (keep.length !== all.length) writeJson(EDITS_KEY, keep);
