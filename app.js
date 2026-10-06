@@ -8,7 +8,7 @@
   const SUGGESTIONS = window.SG.SUGGESTIONS || [];          // places found in links sent from the app, waiting for review (data/suggestions.js)
   const SHARE_REPO = 'LaAaron/shanghai-guide';
   let userPlaces = [];
-  let activeCat = "all";
+  let activeCats = new Set();                // picked category chips (several at once); empty = All. "food" = every kind of food
   let activeDistrict = "all";
   let searchTerm = "";
   let selectedId = null;
@@ -100,9 +100,10 @@
   }
   // the Food chip covers every category marked group:"food" (breakfast, dumplings, duck, ...)
   const isFood = cat => !!(CATEGORIES[cat] && CATEGORIES[cat].group === 'food');
-  const catMatches = (p, cat) => cat === 'all' || p.cat === cat || (cat === 'food' && isFood(p.cat));
+  const catMatches = (p, cats) => !cats.size || cats.has(p.cat) || (cats.has('food') && isFood(p.cat));
+  const foodOpen = () => activeCats.has('food') || [...activeCats].some(isFood);
   function matchesFilters(p){
-    if (!catMatches(p, activeCat)) return false;
+    if (!catMatches(p, activeCats)) return false;
     if (activeDistrict !== "all" && p.district !== activeDistrict) return false;
     return matchesSearch(p);
   }
@@ -115,7 +116,7 @@
         byCat[p.cat] = (byCat[p.cat] || 0) + 1;
         if (isFood(p.cat)) byCat.food = (byCat.food || 0) + 1;
       }
-      if (catMatches(p, activeCat)) byDist[p.district] = (byDist[p.district] || 0) + 1;
+      if (catMatches(p, activeCats)) byDist[p.district] = (byDist[p.district] || 0) + 1;
     });
     return { byCat, byDist };
   }
@@ -140,7 +141,7 @@
       ds.forEach(d => { const o = document.createElement('option'); o.value = d; o.textContent = d; sel.appendChild(o); });
       sel.addEventListener('change', () => {
         activeDistrict = sel.value;
-        if (activeCat !== 'all' && !allPlaces().some(p => catMatches(p, activeCat) && (activeDistrict === 'all' || p.district === activeDistrict))) activeCat = 'all';   // nothing of that kind here
+        if (activeCats.size && !allPlaces().some(p => catMatches(p, activeCats) && (activeDistrict === 'all' || p.district === activeDistrict))) activeCats.clear();   // nothing of those kinds here
         render();
       });
       wrap.appendChild(sel);
@@ -159,11 +160,7 @@
         b.dataset.cat = key;
         if (color){ const d = document.createElement('span'); d.className = 'dot'; d.style.background = color; b.appendChild(d); }
         b.appendChild(document.createTextNode(label));
-        b.addEventListener('click', () => {
-          // Food opens its kinds of food; tapping it again (while it or one of them is picked) closes them
-          activeCat = key === 'food' && (activeCat === 'food' || isFood(activeCat)) ? 'all' : key;
-          render();
-        });
+        b.addEventListener('click', () => { pickCat(key); render(); });
         catChipRow.appendChild(b);
       };
       mk('All', 'all', null);
@@ -187,21 +184,39 @@
     $('near-chip').classList.toggle('active', sortNearest);
     $('near-chip').setAttribute('aria-pressed', sortNearest ? 'true' : 'false');
     catChipRow.querySelectorAll('button.chip[data-cat]').forEach(b => {
-      const key = b.dataset.cat, on = key === activeCat;
+      const key = b.dataset.cat, on = key === 'all' ? !activeCats.size : activeCats.has(key);
       const empty = key !== 'all' && !on && !(byCat[key] > 0);              // greyed out and unselectable: nothing to show
       b.classList.toggle('active', on);
       b.classList.toggle('dim', empty);
       b.disabled = empty;
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
-    const foodOpen = activeCat === 'food' || isFood(activeCat);           // food kinds show while Food (or one of them) is picked
-    catChipRow.querySelectorAll('button.chip-sub').forEach(b => { b.hidden = !foodOpen; });
+    const open = foodOpen();                                              // food kinds show while Food (or one of them) is picked
+    catChipRow.querySelectorAll('button.chip-sub').forEach(b => { b.hidden = !open; });
     const fc = catChipRow.querySelector('button.chip[data-cat="food"]');
-    if (fc){ fc.classList.toggle('active', foodOpen); fc.classList.toggle('open', foodOpen); fc.setAttribute('aria-expanded', foodOpen ? 'true' : 'false'); }
+    if (fc){ fc.classList.toggle('active', open); fc.classList.toggle('open', open); fc.setAttribute('aria-expanded', open ? 'true' : 'false'); }
+  }
+
+  // Chips can be combined (Shopping + Noodles). All clears them. Food shows every kind of food and opens their chips;
+  // picking a kind narrows Food to the kinds picked; tapping Food again closes it.
+  function pickCat(key){
+    if (key === 'all'){ activeCats.clear(); return; }
+    if (key === 'food'){
+      if (foodOpen()) [...activeCats].forEach(k => { if (k === 'food' || isFood(k)) activeCats.delete(k); });
+      else activeCats.add('food');
+      return;
+    }
+    if (isFood(key)){
+      activeCats.delete('food');
+      activeCats.has(key) ? activeCats.delete(key) : activeCats.add(key);
+      if (![...activeCats].some(isFood)) activeCats.add('food');          // last kind un-picked: back to all food, still open
+      return;
+    }
+    activeCats.has(key) ? activeCats.delete(key) : activeCats.add(key);
   }
 
   function resetFilters(){
-    activeCat = 'all'; activeDistrict = 'all'; searchTerm = ''; searchInput.value = '';
+    activeCats.clear(); activeDistrict = 'all'; searchTerm = ''; searchInput.value = '';
     render();
   }
 
