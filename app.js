@@ -159,7 +159,11 @@
         b.dataset.cat = key;
         if (color){ const d = document.createElement('span'); d.className = 'dot'; d.style.background = color; b.appendChild(d); }
         b.appendChild(document.createTextNode(label));
-        b.addEventListener('click', () => { activeCat = key; render(); });
+        b.addEventListener('click', () => {
+          // Food opens its kinds of food; tapping it again (while it or one of them is picked) closes them
+          activeCat = key === 'food' && (activeCat === 'food' || isFood(activeCat)) ? 'all' : key;
+          render();
+        });
         catChipRow.appendChild(b);
       };
       mk('All', 'all', null);
