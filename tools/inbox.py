@@ -129,6 +129,10 @@ DISTRICT_NAMES = ['Huangpu', 'Xuhui', 'Changning', "Jing'an", 'Putuo', 'Hongkou'
                   'Jiading', 'Songjiang', 'Qingpu', 'Fengxian', 'Jinshan', 'Chongming', 'Futian', 'Luohu', 'Nanshan', 'Yantian',
                   "Bao'an", 'Longgang', 'Longhua', 'Pingshan', 'Guangming', 'Dapeng']
 
+def clipped(s, n):
+    return s if len(s) <= n else s[:n - 1].rstrip(' ,') + '…'
+
+
 def tidy_addr(addr):
     """Addresses copied from map apps often start with the province, city and district run together
     ("GuangdongShenzhenFutianShennan Avenue No.6022"): move the district to the end, as the guide writes them."""
@@ -149,8 +153,8 @@ def spot_from(raw, g, user, src=None):
     spot['cat'] = raw.get('cat')
     if spot['cat'] not in cats: raise Done('rejected', 'Unknown category. Expected one of: %s.' % ', '.join(cats))
     spot['district'] = text(raw, 'district', 40) or 'Unsorted'
-    spot['addr'] = tidy_addr(text(raw, 'addr', 200))
-    spot['note'] = text(raw, 'note', 200)
+    spot['addr'] = clipped(tidy_addr(text(raw, 'addr', 2000)), 200)      # long addresses (copied from map apps) are cut, not refused
+    spot['note'] = clipped(text(raw, 'note', 2000), 200)
     lat, lng = raw.get('lat'), raw.get('lng')
     if (lat is None) != (lng is None): raise Done('rejected', 'Give both latitude and longitude, or neither.')
     if lat is not None:
@@ -161,7 +165,7 @@ def spot_from(raw, g, user, src=None):
         lat, lng = round(float(lat), 6), round(float(lng), 6)
     spot['lat'], spot['lng'] = lat, lng
     spot['approx'] = raw.get('approx') is True            # only a real boolean; anything else means "exact"
-    flag = text(raw, 'flag', 200)                         # a warning shown on the spot (spots from links whose location is uncertain)
+    flag = clipped(text(raw, 'flag', 2000), 200)                         # a warning shown on the spot (spots from links whose location is uncertain)
     if flag: spot['flag'] = flag
     link = clean_src(text(raw, 'src', 500)) or clean_src(src or '')
     if link: spot['src'] = link
