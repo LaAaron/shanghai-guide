@@ -680,7 +680,7 @@
     }
     map.on('zoom', () => followMap(livePoint));                                          // trackpad / wheel / fly-to: every frame
     map.on('zoomanim', e => { if (map._zoomAnimated) followMap(ll => map._latLngToNewLayerPoint(L.latLng(ll[0], ll[1]), e.zoom, e.center)); });   // buttons / double-click
-    const ROAD_MINZ = [14, 14, 14, 15, 14.5];              // by class: motorway, trunk, primary, secondary, river
+    const ROAD_MINZ = [14, 14, 14, 15, 14.5, 16];          // by class: motorway, trunk, primary, secondary, river, smaller street
     function updateLabels(){
       const z = map.getZoom(), bounds = map.getBounds().pad(0.25), out = [], idx = makeIndex();
       $('map').classList.remove('zooming');

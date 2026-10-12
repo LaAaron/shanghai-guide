@@ -318,6 +318,7 @@
   .lb.area.s{ color:#6b5f55; }
   .lb.area.a{ color:#7a5b3f; }
   .lb.road.c0,.lb.road.c1{ color:#6a4a00; font-weight:700; }
+  .lb.road.c5{ color:#6b6259; font-weight:500; }
   .lg-t{ display:inline-block; width:22px; margin-right:8px; text-align:center; font:700 10px/9px var(--font); color:#5b5249; text-shadow:0 0 2px #fff; vertical-align:middle; }
 
   /* Popups */

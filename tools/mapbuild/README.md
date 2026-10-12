@@ -8,7 +8,7 @@ Needs Python with `duckdb shapely numpy pillow`. Data: Overture Maps (release na
 4. `python build_guide.py` writes `out/geo.js`, `out/places.js`, `out/added.js`, `out/labels.js` (change the district names for a different city).
 5. `python install_guide.py` copies them to `guides/<id>/` and registers the guide in `data/guides.js` (edit its id, centre, area box, place name in that file), then `python tools/stamp.py`.
 
-The Shenzhen guide covers the Futian centre in detail (zoom 16, about 4 km across), a wider zoom-15 area (12 km), and overview levels out to about 80 km. `extra/` added zoom-15/16 detail for Luohu and for Nanshan, Shenzhen Bay and Shekou (2026-10-12): list areas in `extra/areas.py`, run `fetch_extra.py <area>` for each, then `build_extra.py`, and merge `extra_tiles.json` into `guides/shenzhen/tiles.js` (new tiles replace old ones). Road and area *name labels* are not generated yet (`labels.js` is empty).
+The Shenzhen guide covers the Futian centre in detail (zoom 16, about 4 km across), a wider zoom-15 area (12 km), and overview levels out to about 80 km. `extra/` added zoom-15/16 detail for Luohu and for Nanshan, Shenzhen Bay and Shekou (2026-10-12): list areas in `extra/areas.py`, run `fetch_extra.py <area>` for each, then `build_extra.py`, and merge `extra_tiles.json` into `guides/shenzhen/tiles.js` (new tiles replace old ones). Road and area name labels: `extra/fetch_labels.py` then `extra/build_labels.py` write `labels.js` (named roads, rivers, parks, lakes; English from Overture, the rest translated once with Claude Haiku into `extra/en_names.json`).
 Outside mainland China, skip the GCJ-02 conversion (`gcj` in `build_tiles.py`) and set `"china": false` in `data/guides.js`.
 
 ## Filling gaps in the Shanghai map (done once)
