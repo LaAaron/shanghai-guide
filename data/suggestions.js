@@ -1,4 +1,5 @@
 /* Places found in links sent from the app, waiting for review (tools/inbox.py). Do not edit by hand. */
 window.SG = window.SG || {};
 SG.SUGGESTIONS = [
+ {"id":"l-mv570mtl-zszvex","url":"https://www.instagram.com/reel/DeKiqVKSakN/?srtk=MTl4MmxlOXBuaGhsNA==","title":"@jimmyvisitsworld","summary":"Instagram reel reviews Chaofa Chaoshan Beef, a Shenzhen hot pot restaurant famous for beef that goes from slaughter to table in 3 hours from its own farm, with a large self-serve sauce station.","by":"Riya","at":"2026-10-12","places":[{"i":0,"guide":"shenzhen","spot":{"id":"chaofa-chaoshan-beef","name":"Chaofa Chaoshan Beef","zh":"潮粦 潮汕牛肉店","cat":"hotpot","district":"Unsorted","addr":"","note":"Beef from own farm, slaughter to table in 3 hrs. Cook in hotpot, build dip at massive sauce station. ~$20/person.","lat":null,"lng":null,"approx":true,"flag":"Only city (Shenzhen) tagged; exact mall/branch not shown."},"confidence":"unknown","evidence":"caption + sign at 0:03, menu at 0:06","duplicate_of":null}]}
 ];
