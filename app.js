@@ -2225,7 +2225,8 @@
           '<span class="pn"><span class="plan-kind">' + esc(KIND_LABEL[st.kind] || 'Stop') + (st.stay ? ' · ' + fmtDur(st.stay) : '') + (st.at ? ' · booked ' + esc(st.at) : '') + '</span>' +
           '<b>' + esc(name) + '</b>' + (sp && sp.zh ? '<span class="zh">' + esc(sp.zh) + '</span>' : '') +
           (st.order ? '<span class="plan-order">Order: ' + esc(st.order) + '</span>' : '') + (st.note ? '<span class="plan-note">' + esc(st.note) + '</span>' : '') +
-          (sp ? '<span class="plan-acts"><button type="button" data-pl="map">Map</button><button type="button" data-pl="dir">Directions</button></span>' : '') + '</span>' +
+          '<span class="plan-acts">' + (sp ? '<button type="button" data-pl="map">Map</button><button type="button" data-pl="dir">Directions</button>' : '') +
+            '<button type="button" class="plan-rm" data-pl="remove-stop">Remove</button></span></span>' +
           (rows.length > 1 ? '<span class="plan-grip" aria-label="Drag to reorder" title="Drag to reorder"><svg viewBox="0 0 12 20" fill="currentColor" aria-hidden="true"><circle cx="3" cy="4" r="1.6"/><circle cx="9" cy="4" r="1.6"/><circle cx="3" cy="10" r="1.6"/><circle cx="9" cy="10" r="1.6"/><circle cx="3" cy="16" r="1.6"/><circle cx="9" cy="16" r="1.6"/></svg></span>' : '') + '</li>';
       });
       h += '</ol><button type="button" class="plan-add" data-pl="add-stop">+ Add a stop</button></section>';
@@ -2418,6 +2419,14 @@
     else if (act === 'edit-day') openDay(dayId);
     else if (act === 'add-stop') openStop(dayId, null);
     else if (act === 'edit-stop') openStop(dayId, stopId);
+    else if (act === 'remove-stop'){
+      const d = planDays().find(x => x.id === dayId); if (!d) return;
+      const before = JSON.parse(JSON.stringify(d)), st = d.stops.find(s => s.id === stopId); if (!st) return;
+      const copy = JSON.parse(JSON.stringify(d)); copy.stops = copy.stops.filter(s => s.id !== stopId);
+      const sp = st.spot ? findPlace(st.spot) : null;
+      storeDay(copy);
+      toast('Removed “' + (sp ? sp.name : st.name) + '”.', { action:'Undo', ms:6000, onAction: () => storeDay(before) });
+    }
     else if (act === 'dir' || act === 'map'){
       const d = planDays().find(x => x.id === dayId), st = d && d.stops.find(s => s.id === stopId);
       if (!st || !st.spot) return;
