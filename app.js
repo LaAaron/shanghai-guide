@@ -415,8 +415,44 @@
   }
 
   const renderMapSoon = debounce(() => { renderMap(); fitVisible(); }, 180);
+  // ---- suggestions under the search box: spots whose name (or Chinese name) matches what's typed, best first
+  const suggestBox = document.createElement('div');
+  suggestBox.className = 'search-suggest'; suggestBox.hidden = true; suggestBox.setAttribute('role', 'listbox');
+  searchInput.closest('.search-field').appendChild(suggestBox);
+  let suggestItems = [];
+  function showSuggest(){
+    const q = searchInput.value.trim().toLowerCase();
+    if (!q){ suggestBox.hidden = true; return; }
+    const rank = p => {
+      const n = p.name.toLowerCase(), z = p.zh || '';
+      if (n === q) return -1;
+      if (n.startsWith(q) || z.startsWith(q)) return 0;
+      if (n.split(/[\s(（·-]+/).some(w => w.startsWith(q))) return 1;
+      if (n.includes(q) || z.includes(q)) return 2;
+      return 9;
+    };
+    suggestItems = allPlaces().map(p => ({ p, r:rank(p) })).filter(x => x.r < 9).sort((a, b) => a.r - b.r || a.p.name.localeCompare(b.p.name)).slice(0, 6).map(x => x.p);
+    if (!suggestItems.length || (suggestItems.length === 1 && suggestItems[0].name.toLowerCase() === q)){ suggestBox.hidden = true; return; }
+    suggestBox.innerHTML = suggestItems.map((p, i) => { const c = CATEGORIES[p.cat] || CATEGORIES.other;
+      return '<button type="button" class="pick-row" role="option" data-i="' + i + '"><i style="background:' + c.color + '"></i><span class="pick-name">' + esc(p.name) + '</span>' +
+        '<span class="pick-sub">' + esc([p.zh, p.district !== 'Unsorted' ? p.district : '', c.label].filter(Boolean).join(' · ')) + '</span></button>'; }).join('');
+    suggestBox.hidden = false;
+  }
+  searchInput.addEventListener('focus', showSuggest);
+  searchInput.addEventListener('blur', () => setTimeout(() => { suggestBox.hidden = true; }, 150));
+  searchInput.addEventListener('keydown', e => { if (e.key === 'Escape') suggestBox.hidden = true; });
+  suggestBox.addEventListener('pointerdown', e => e.preventDefault());       // keep focus until the tap lands
+  suggestBox.addEventListener('click', e => {
+    const b = e.target.closest('.pick-row'); if (!b) return;
+    const p = suggestItems[+b.dataset.i]; if (!p) return;
+    searchInput.value = p.name; suggestBox.hidden = true; searchInput.blur();
+    searchTerm = p.name.toLowerCase();
+    renderList(); renderMap(); fitVisible();                                // the map zooms in on it, with its big pin
+    selectedId = p.id; markSelected(p.id);
+  });
   searchInput.addEventListener('input', e => {
     searchTerm = e.target.value.trim().toLowerCase();
+    showSuggest();
     renderList();            // list responds on the keystroke
     renderMapSoon();         // map settles once typing pauses
   });
