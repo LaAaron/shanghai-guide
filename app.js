@@ -219,7 +219,7 @@
   }
 
   function resetFilters(){
-    activeCats.clear(); activeDistrict = 'all'; searchTerm = ''; searchInput.value = '';
+    activeCats.clear(); activeDistrict = 'all'; searchTerm = ''; searchInput.value = ''; $('search-clear').hidden = true;
     render();
   }
 
@@ -446,12 +446,21 @@
   suggestBox.addEventListener('click', e => {
     const b = e.target.closest('.pick-row'); if (!b) return;
     const p = suggestItems[+b.dataset.i]; if (!p) return;
-    searchInput.value = p.name; suggestBox.hidden = true; searchInput.blur();
+    searchInput.value = p.name; suggestBox.hidden = true; searchInput.blur(); syncClear();
     searchTerm = p.name.toLowerCase();
     renderList(); renderMap(); fitVisible();                                // the map zooms in on it, with its big pin
     selectedId = p.id; markSelected(p.id);
   });
+  // the x in the search box clears it (and puts the list and map back to everything)
+  const searchClear = $('search-clear');
+  const syncClear = () => { searchClear.hidden = !searchInput.value; };
+  searchClear.addEventListener('pointerdown', e => e.preventDefault());       // don't steal focus from the box
+  searchClear.addEventListener('click', () => {
+    searchInput.value = ''; searchTerm = ''; suggestBox.hidden = true; syncClear();
+    renderList(); renderMap(); fitVisible();
+  });
   searchInput.addEventListener('input', e => {
+    syncClear();
     searchTerm = e.target.value.trim().toLowerCase();
     showSuggest();
     renderList();            // list responds on the keystroke
