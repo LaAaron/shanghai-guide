@@ -47,6 +47,7 @@
 
   <main id="main" class="show-list">
     <div id="list-pane"></div>
+    <div id="plan-pane"></div>
     <div id="map-pane">
       <div id="map"></div>
       <details class="map-legend" id="map-legend"><summary>Map key</summary>
@@ -83,6 +84,10 @@
     <button type="button" class="tab" id="tab-map">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4L3.5 6v14L9 18l6 2 5.5-2V4L15 6z"/><path d="M9 4v14M15 6v14"/></svg>
       Map
+    </button>
+    <button type="button" class="tab" id="tab-plan">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4M7.5 14h3M7.5 17h6"/></svg>
+      Plan
     </button>
   </nav>
 </div>
@@ -297,6 +302,88 @@
   <button type="button" class="toast-x" id="toast-x" aria-label="Dismiss">&times;</button>
 </div>
 
+<div id="day-backdrop" class="sheet-backdrop">
+  <div id="day-sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="day-title" tabindex="-1">
+    <div class="sheet-head">
+      <div class="sheet-grabber"></div>
+      <div class="sheet-nav">
+        <button type="button" class="nav-btn" id="day-cancel">Cancel</button>
+        <h2 id="day-title">New day</h2>
+        <button type="submit" class="nav-btn bold" form="day-form">Save</button>
+      </div>
+    </div>
+    <div class="sheet-body">
+      <form id="day-form" autocomplete="off">
+        <div class="form-group">
+          <div class="field-row">
+            <div class="field"><label for="d-date">Date</label><input id="d-date" type="date" required></div>
+            <div class="field"><label for="d-start">Leave at</label><input id="d-start" type="time" value="09:00" required></div>
+          </div>
+          <div class="field"><label for="d-name">Name (optional)</label><input id="d-name" type="text" maxlength="60" placeholder="e.g. Futian food crawl"></div>
+          <div class="field"><label for="d-from">Leaving from (optional)</label><input id="d-from" type="text" list="plan-places" maxlength="80" placeholder="Your hotel, or any spot in the guide"></div>
+        </div>
+        <p class="hint">Times for every stop are worked out from when you leave, how long each journey takes and how long you stay.</p>
+        <button type="button" class="danger-btn" id="day-delete" hidden>Delete this day</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div id="stop-backdrop" class="sheet-backdrop">
+  <div id="stop-sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="stop-title" tabindex="-1">
+    <div class="sheet-head">
+      <div class="sheet-grabber"></div>
+      <div class="sheet-nav">
+        <button type="button" class="nav-btn" id="stop-cancel">Cancel</button>
+        <h2 id="stop-title">Add a stop</h2>
+        <button type="submit" class="nav-btn bold" form="stop-form">Save</button>
+      </div>
+    </div>
+    <div class="sheet-body">
+      <form id="stop-form" autocomplete="off">
+        <div class="form-group">
+          <div class="field"><label for="s-place">Place</label><input id="s-place" type="text" list="plan-places" maxlength="80" placeholder="Pick a spot from the guide, or type a name" required></div>
+          <div class="field-row">
+            <div class="field"><label for="s-kind">What</label>
+              <select id="s-kind">
+                <option value="breakfast">Breakfast</option><option value="lunch">Lunch</option><option value="dinner">Dinner</option>
+                <option value="cafe">Cafe</option><option value="snack">Snack</option><option value="sight">Sight</option>
+                <option value="shopping">Shopping</option><option value="hotel">Hotel</option><option value="other">Other</option>
+              </select></div>
+            <div class="field"><label for="s-stay">Stay for</label>
+              <select id="s-stay">
+                <option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60">1 hour</option>
+                <option value="75">1 h 15</option><option value="90">1 h 30</option><option value="120">2 hours</option><option value="150">2 h 30</option>
+                <option value="180">3 hours</option><option value="240">4 hours</option><option value="300">5 hours</option><option value="0">No stop</option>
+              </select></div>
+          </div>
+        </div>
+        <div class="group-label">Getting there</div>
+        <div class="form-group">
+          <div class="field-row">
+            <div class="field"><label for="s-mode">By</label>
+              <select id="s-mode"><option value="">Best guess</option><option value="walk">Walking</option><option value="metro">Metro</option><option value="taxi">Taxi / Didi</option><option value="other">Other</option></select></div>
+            <div class="field"><label for="s-travel">Takes (minutes)</label><input id="s-travel" type="number" inputmode="numeric" min="0" max="600" placeholder="auto"></div>
+          </div>
+          <div class="field"><label for="s-at">Booked for a set time? (optional)</label><input id="s-at" type="time"></div>
+        </div>
+        <p class="hint" id="s-estimate"></p>
+        <div class="group-label">Food &amp; notes</div>
+        <div class="form-group">
+          <div class="field"><label for="s-order">What we'll order</label><textarea id="s-order" rows="2" maxlength="400" placeholder="e.g. crab roe noodles, xiaolongbao ×2"></textarea></div>
+          <div class="field"><label for="s-note">Notes</label><textarea id="s-note" rows="2" maxlength="400" placeholder="Booking number, which exit, opening hours…"></textarea></div>
+        </div>
+        <div class="stop-moves" id="stop-moves" hidden>
+          <button type="button" class="dir-btn" id="stop-up">Move earlier</button>
+          <button type="button" class="dir-btn" id="stop-down">Move later</button>
+        </div>
+        <button type="button" class="danger-btn" id="stop-delete" hidden>Remove this stop</button>
+      </form>
+    </div>
+  </div>
+</div>
+<datalist id="plan-places"></datalist>
+
 <script src="vendor/leaflet.js"></script>
 <script src="data/guides.js"></script>
 <script>
@@ -311,6 +398,7 @@
 </script>
 <script src="data/photos.js"></script>
 <script src="data/suggestions.js"></script>
+<script src="data/itinerary.js"></script>
 <script src="app.js"></script>
 <script src="pwa.js"></script>
 </body>

@@ -420,14 +420,15 @@
   function switchTab(which){
     if (typeof dismissQuick === 'function') dismissQuick(true);
     const main = $('main');
-    const tabList = $('tab-list'), tabMap = $('tab-map');
     const toMap = which === 'map';
-    main.className = toMap ? 'show-map' : 'show-list';
+    main.className = 'show-' + which;
     appEl.classList.toggle('map-view', toMap);
-    tabList.classList.toggle('active', !toMap);
-    tabMap.classList.toggle('active', toMap);
-    if (toMap) tabMap.setAttribute('aria-current', 'page'); else tabMap.removeAttribute('aria-current');
-    if (!toMap) tabList.setAttribute('aria-current', 'page'); else tabList.removeAttribute('aria-current');
+    appEl.classList.toggle('plan-view', which === 'plan');
+    ['list', 'map', 'plan'].forEach(t => {
+      const b = $('tab-' + t); b.classList.toggle('active', t === which);
+      if (t === which) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    });
+    if (which === 'plan') renderPlan();
     if (toMap){
       requestAnimationFrame(() => setTimeout(() => {
         if (!map) return;
@@ -443,6 +444,7 @@
   }
   $('tab-list').addEventListener('click', () => switchTab('list'));
   $('tab-map').addEventListener('click', () => switchTab('map'));
+  $('tab-plan').addEventListener('click', () => switchTab('plan'));
 
   function initMap(){
     if (typeof L === 'undefined'){
@@ -1951,6 +1953,8 @@
     links.forEach(x => { if (x.issue && !suggIds.has(x.id) && !x.rejected && !x.closed) items.push({ obj:x, n:x.issue, at:x.sentAt, save:() => writeJson(LINKS_KEY, links) }); });
     const edits = readJson(EDITS_KEY, []);
     edits.forEach(x => { if (x.issue && !x.rejected && !x.closedAt) items.push({ obj:x, n:x.issue, at:x.sentAt, save:() => writeJson(EDITS_KEY, edits), edit:true }); });
+    const plans = readJson('sg-plan', {});
+    Object.values(plans).forEach(x => { if (x.issue && !x.rejected && !x.closedAt) items.push({ obj:x, n:x.issue, at:x.sentAt, save:() => { const now = readJson('sg-plan', {}); if (now[x.id] && now[x.id].rev === x.rev){ now[x.id] = x; writeJson('sg-plan', now); } }, plan:true }); });
     for (const it of items){
       if (Date.now() - (it.at || 0) < 90000) continue;
       const iss = await gh('GET', '/repos/' + SHARE_REPO + '/issues/' + it.n);
@@ -1959,7 +1963,7 @@
         const cs = await gh('GET', '/repos/' + SHARE_REPO + '/issues/' + it.n + '/comments?per_page=10');
         const ours = cs.filter(c => c.user && c.user.login === 'github-actions[bot]');
         it.obj.rejected = String((ours.length ? ours[ours.length - 1].body : '') || 'The guide did not accept this.').slice(0, 240);
-      } else if (it.edit) it.obj.closedAt = Date.now();
+      } else if (it.edit || it.plan) it.obj.closedAt = Date.now();
       else it.obj.closed = true;
       syncTouched = true; await it.save();
       if (it.edit && it.obj.rejected){                // a refused edit is dropped, so the spot shows what the guide has
@@ -1980,7 +1984,8 @@
     const links = readJson(LINKS_KEY, []).filter(x => !x.issue && !x.rejected).length;
     const reviews = readJson(DISMISS_KEY, []).filter(d => !d.issue).length;
     const edits = readJson(EDITS_KEY, []).filter(x => !x.issue && !x.rejected).length;
-    return { spots, photos, removals, links, reviews, edits, total: spots + photos + removals + links + reviews + edits };
+    const plans = Object.values(readJson('sg-plan', {})).filter(x => !x.issue && !x.rejected).length;
+    return { spots, photos, removals, links, reviews, edits, plans, total: spots + photos + removals + links + reviews + edits + plans };
   }
   // sent, but the guide has not answered yet: keep checking now and then
   function awaitingAnswer(){
@@ -1992,7 +1997,7 @@
   const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
   function pendingText(c){
     return [c.spots && plural(c.spots, 'spot'), c.photos && plural(c.photos, 'photo'), c.removals && plural(c.removals, 'photo removal'),
-      c.links && plural(c.links, 'link'), c.reviews && plural(c.reviews, 'dismissed suggestion'), c.edits && plural(c.edits, 'edit')].filter(Boolean).join(', ');
+      c.links && plural(c.links, 'link'), c.reviews && plural(c.reviews, 'dismissed suggestion'), c.edits && plural(c.edits, 'edit'), c.plans && plural(c.plans, 'plan change')].filter(Boolean).join(', ');
   }
 
   async function syncNow(manual){
@@ -2001,7 +2006,7 @@
     if (!navigator.onLine){ updateSyncUi(); if (manual) toast('No connection. It will send as soon as you’re online.'); return; }
     syncBusy = true; syncErr = null; syncTouched = false; updateSyncUi();
     try{
-      await sendSpots(); await sendEdits(); await sendPhotos(); await sendRemovals(); await sendLinks(); await sendDismissals(); await checkSent();
+      await sendSpots(); await sendEdits(); await sendPlan(); await sendPhotos(); await sendRemovals(); await sendLinks(); await sendDismissals(); await checkSent();
       if (manual) toast(pendingCounts().total ? 'Some items are still waiting.' : 'Everything is sent.');
     } catch(e){
       syncErr = e.code || 'net';
@@ -2009,7 +2014,7 @@
       if (!e.code) console.warn(e);
     } finally {
       syncBusy = false; updateSyncUi();
-      if (syncTouched || manual){ renderList(); if (photoSpot) renderPhotoSheet(); }
+      if (syncTouched || manual){ renderList(); renderPlan(); if (photoSpot) renderPhotoSheet(); }
     }
   }
 
@@ -2104,6 +2109,244 @@
     h1.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); open(); } });
   }
 
+  /* ---------- Plan: the shared day-by-day itinerary (Plan tab) ----------
+     Days are shared like spots: a saved day is kept on this phone at once (PLAN_KEY) and sent as a "[plan]" issue;
+     tools/inbox.py checks it and writes data/itinerary.js, and everyone gets it with their next update. Each save
+     carries a "rev" (a timestamp): the newest version of a day wins, and the local copy is dropped once the guide has it.
+     Stop times are worked out here: leave time, then for each stop the journey there and how long you stay. */
+  const PLAN_KEY = 'sg-plan';
+  const PUBLISHED_DAYS = window.SG.ITINERARY || [];
+  const KIND_LABEL = { breakfast:'Breakfast', lunch:'Lunch', dinner:'Dinner', cafe:'Cafe', snack:'Snack', sight:'Sight', shopping:'Shopping', hotel:'Hotel', other:'Stop' };
+  const KIND_CAT = { breakfast:'breakfast', lunch:'meal', dinner:'meal', cafe:'drinks', snack:'dessert', sight:'sights', shopping:'shopping', hotel:'stay', other:'other' };
+  const MODE_LABEL = { walk:'walk', metro:'by metro', taxi:'by taxi', other:'' };
+  const planPane = $('plan-pane');
+  const planPending = () => readJson(PLAN_KEY, {});
+  function planDays(){
+    const pend = planPending(), byId = new Map(PUBLISHED_DAYS.map(d => [d.id, d]));
+    Object.values(pend).forEach(p => {
+      const pub = byId.get(p.id);
+      if (pub && (pub.rev || 0) >= p.rev) return;                      // the guide already has this (or newer)
+      if (p.deleted) byId.delete(p.id); else byId.set(p.id, p.day);
+    });
+    return Array.from(byId.values()).filter(d => d.guide === GUIDE.id).sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start));
+  }
+  function cleanPlanPending(){                                          // forget local copies the guide now has
+    const pend = planPending(), pub = new Map(PUBLISHED_DAYS.map(d => [d.id, d]));
+    let changed = false;
+    Object.keys(pend).forEach(id => {
+      const p = pend[id], d = pub.get(id);
+      if ((d && (d.rev || 0) >= p.rev) || (p.deleted && !d && p.issue)){ delete pend[id]; changed = true; }
+    });
+    if (changed) writeJson(PLAN_KEY, pend);
+  }
+  function storeDay(day, deleted){
+    const pend = planPending(), rev = Date.now();
+    if (deleted) pend[day.id] = { id:day.id, rev, deleted:true, name:day.title || day.date };
+    else { day.rev = rev; day.guide = GUIDE.id; pend[day.id] = { id:day.id, rev, day:JSON.parse(JSON.stringify(day)), name:day.title || day.date }; }
+    writeJson(PLAN_KEY, pend); renderPlan(); updateSyncUi();
+    if (syncKey()) syncNow();
+  }
+  async function sendPlan(){
+    const pend = planPending();
+    for (const p of Object.values(pend)){
+      if (p.issue || p.rejected) continue;
+      const payload = p.deleted ? { action:'delete', id:p.id, rev:p.rev } : { action:'save', id:p.id, rev:p.rev, day:p.day };
+      p.issue = await postIssue('[plan] ' + (p.name || p.id), payload);
+      p.sentAt = Date.now(); syncTouched = true;
+      const now = planPending(); if (now[p.id] && now[p.id].rev === p.rev){ now[p.id] = p; writeJson(PLAN_KEY, now); }   // not changed again meanwhile
+      await wait(1500);
+    }
+  }
+
+  // where a stop or the starting point is: a spot in the guide (live, so edits to the spot carry over) or the copied pin
+  function planPoint(x){
+    const sp = x && x.spot ? findPlace(x.spot) : null;
+    if (sp && sp.lat && sp.lng) return [sp.lat, sp.lng];
+    return x && x.lat != null && x.lng != null ? [x.lat, x.lng] : null;
+  }
+  function placeFromName(text){                                         // "Luo Chun Ge" picked from the list -> that spot
+    const t = (text || '').trim(), low = t.toLowerCase();
+    const sp = allPlaces().find(p => p.name.toLowerCase() === low) || allPlaces().find(p => (p.zh || '') === t);
+    return sp ? { spot:sp.id, name:sp.name, lat:sp.lat || null, lng:sp.lng || null } : { spot:'', name:t, lat:null, lng:null };
+  }
+  // journey time, offline: from the straight-line distance (streets are ~1.35x longer), by the way you'll go
+  function estimate(a, b, mode){
+    if (!a || !b) return null;
+    const km = distanceM(a, b) / 1000 * 1.35;
+    const m = mode || (km <= 1.3 ? 'walk' : 'metro');
+    const min = m === 'walk' ? km / 4.8 * 60 : m === 'taxi' ? 4 + km / 22 * 60 : 9 + km / 28 * 60;    // metro: walk in, wait, ride
+    return { mode:m, min:Math.max(1, Math.round(min / (min > 20 ? 5 : 1)) * (min > 20 ? 5 : 1)), km };
+  }
+  const toMin = t => { const m = /^(\d\d):(\d\d)$/.exec(t || ''); return m ? +m[1] * 60 + +m[2] : null; };
+  const fmtT = m => { m = ((Math.round(m) % 1440) + 1440) % 1440; return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
+  const fmtDur = m => m < 60 ? m + ' min' : Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + (m % 60) : '');
+  function timeline(day){
+    let t = toMin(day.start) ?? 540, prev = planPoint(day.from);
+    return day.stops.map(st => {
+      const here = planPoint(st), est = estimate(prev, here, st.mode);
+      const travel = st.travel != null ? st.travel : est ? est.min : 15;
+      const mode = st.mode || (est ? est.mode : '');
+      let arrive = t + travel, wait = 0, late = 0;
+      const at = toMin(st.at);
+      if (at != null){ if (arrive <= at){ wait = at - arrive; arrive = at; } else late = arrive - at; }
+      const leave = arrive + (st.stay || 0);
+      const row = { st, travel, mode, guessed:st.travel == null, unknown:st.travel == null && !est, depart:t, arrive, leave, wait, late };
+      t = leave; if (here) prev = here;
+      return row;
+    });
+  }
+
+  function dayLabel(d){
+    const dt = new Date(d.date + 'T12:00:00');
+    return isNaN(dt) ? d.date : dt.toLocaleDateString('en-GB', { weekday:'short', day:'numeric', month:'short' });
+  }
+  function renderPlan(){
+    if (!planPane) return;
+    const days = planDays(), pend = planPending();
+    const opts = document.getElementById('plan-places');
+    if (opts) opts.innerHTML = allPlaces().map(p => '<option value="' + esc(p.name) + '">' + esc(p.zh || '') + '</option>').join('');
+    let h = '<div class="plan-head"><div><h2>Plan</h2><p>' + esc(GUIDE.place) + ' · ' + (days.length ? days.length + (days.length === 1 ? ' day' : ' days') : 'no days yet') + '</p></div>' +
+      '<button type="button" class="dir-btn primary" data-pl="add-day">Add a day</button></div>';
+    if (!days.length) h += '<div class="empty-msg">Add a day, then add the places you\'ll go in order: breakfast, sights, lunch, shopping, dinner…<br>Times are worked out as you go, and you can note what to order.</div>';
+    days.forEach((d, di) => {
+      const rows = timeline(d), p = pend[d.id], from = d.from && (d.from.name || (d.from.spot && (findPlace(d.from.spot) || {}).name));
+      const state = p && !p.deleted ? (p.rejected ? '<span class="plan-state warn">Not saved: ' + esc(p.rejected) + '</span>' : '<span class="plan-state">' + (p.issue ? 'Sent' : syncKey() ? 'Waiting to send' : 'On this phone only') + '</span>') : '';
+      h += '<section class="plan-day" data-day="' + esc(d.id) + '"><div class="plan-day-head" data-pl="edit-day">' +
+        '<div><div class="plan-date">Day ' + (di + 1) + ' · ' + esc(dayLabel(d)) + '</div>' + (d.title ? '<div class="plan-title">' + esc(d.title) + '</div>' : '') + '</div>' +
+        '<div class="plan-span">' + esc(d.start) + (rows.length ? '–' + fmtT(rows[rows.length - 1].leave) : '') + '</div></div>' + state +
+        '<ol class="plan-stops"><li class="plan-start"><span class="pt">' + esc(d.start) + '</span><span class="pn">Leave' + (from ? ' ' + esc(from) : '') + '</span></li>';
+      rows.forEach((r, i) => {
+        const st = r.st, sp = st.spot ? findPlace(st.spot) : null, name = sp ? sp.name : st.name;
+        const c = CATEGORIES[sp ? sp.cat : KIND_CAT[st.kind]] || CATEGORIES.other;
+        h += '<li class="plan-move">' + (r.unknown ? '<span>~' + r.travel + ' min to get there (no pin to estimate from)</span>' :
+            '<span>' + (r.guessed ? '~' : '') + fmtDur(r.travel) + ' ' + esc(MODE_LABEL[r.mode] || '') + '</span>') +
+          (r.wait ? '<span class="plan-wait">' + fmtDur(r.wait) + ' spare before ' + esc(st.at) + '</span>' : '') +
+          (r.late ? '<span class="plan-late">' + fmtDur(r.late) + ' late for ' + esc(st.at) + '</span>' : '') + '</li>' +
+          '<li class="plan-stop" data-stop="' + esc(st.id) + '"><span class="pt">' + fmtT(r.arrive) + (st.stay ? '<small>' + fmtT(r.leave) + '</small>' : '') + '</span>' +
+          '<span class="plan-dot" style="background:' + c.color + ';color:' + c.ink + '">' + svgIcon(ICONS[sp ? sp.cat : KIND_CAT[st.kind]] ? (sp ? sp.cat : KIND_CAT[st.kind]) : 'other') + '</span>' +
+          '<span class="pn"><span class="plan-kind">' + esc(KIND_LABEL[st.kind] || 'Stop') + (st.stay ? ' · ' + fmtDur(st.stay) : '') + (st.at ? ' · booked ' + esc(st.at) : '') + '</span>' +
+          '<b>' + esc(name) + '</b>' + (sp && sp.zh ? '<span class="zh">' + esc(sp.zh) + '</span>' : '') +
+          (st.order ? '<span class="plan-order">Order: ' + esc(st.order) + '</span>' : '') + (st.note ? '<span class="plan-note">' + esc(st.note) + '</span>' : '') +
+          (sp ? '<span class="plan-acts"><button type="button" data-pl="map">Map</button><button type="button" data-pl="dir">Directions</button></span>' : '') + '</span></li>';
+      });
+      h += '</ol><button type="button" class="plan-add" data-pl="add-stop">+ Add a stop</button></section>';
+    });
+    planPane.innerHTML = h;
+  }
+
+  // ---- day sheet
+  const daySheet = makeSheet($('day-backdrop'), $('day-sheet'));
+  let editingDay = null;
+  function openDay(id){
+    const d = id ? planDays().find(x => x.id === id) : null;
+    editingDay = d ? JSON.parse(JSON.stringify(d)) : null;
+    $('day-title').textContent = d ? 'Edit day' : 'New day';
+    const last = planDays().slice(-1)[0];
+    let date = d ? d.date : '';
+    if (!d){ const n = last ? new Date(last.date + 'T12:00:00') : new Date(); if (last) n.setDate(n.getDate() + 1); date = n.toISOString().slice(0, 10); }
+    $('d-date').value = date; $('d-start').value = d ? d.start : (last ? last.start : '09:00');
+    $('d-name').value = d ? d.title || '' : '';
+    $('d-from').value = d ? (d.from && (d.from.name || '')) : (last && last.from ? last.from.name || '' : '');
+    $('day-delete').hidden = !d;
+    daySheet.open();
+  }
+  $('day-cancel').addEventListener('click', () => daySheet.close());
+  $('day-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const day = editingDay || { id:'d-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6), stops:[] };
+    day.date = $('d-date').value; day.start = $('d-start').value || '09:00'; day.title = $('d-name').value.trim();
+    day.from = $('d-from').value.trim() ? placeFromName($('d-from').value) : { spot:'', name:'', lat:null, lng:null };
+    if (!/^\d{4}-\d\d-\d\d$/.test(day.date)){ toast('Pick a date for this day.'); return; }
+    daySheet.close(); storeDay(day);
+  });
+  $('day-delete').addEventListener('click', () => {
+    if (!editingDay || !window.confirm('Delete this day and its stops from the plan, for everyone?')) return;
+    daySheet.close(); storeDay(editingDay, true);
+  });
+
+  // ---- stop sheet
+  const stopSheet = makeSheet($('stop-backdrop'), $('stop-sheet'));
+  let stopCtx = null;                                                   // { day, i (index, or -1 for a new stop) }
+  function prevPoint(day, i){
+    for (let k = i - 1; k >= 0; k--){ const p = planPoint(day.stops[k]); if (p) return p; }
+    return planPoint(day.from);
+  }
+  function showEstimate(){
+    if (!stopCtx) return;
+    const pl = placeFromName($('s-place').value), here = planPoint(pl);
+    const i = stopCtx.i < 0 ? stopCtx.day.stops.length : stopCtx.i, est = estimate(prevPoint(stopCtx.day, i), here, $('s-mode').value);
+    $('s-estimate').textContent = !$('s-place').value.trim() ? '' : !here ? 'This place has no pin, so the journey can\'t be estimated: type the minutes yourself (otherwise 15 min is used).'
+      : est ? 'Estimate: about ' + fmtDur(est.min) + ' ' + (MODE_LABEL[est.mode] || '') + ' (' + fmtDist(est.km * 1000) + '). Leave "Takes" empty to use it.' : 'The previous stop has no pin, so the journey can\'t be estimated.';
+  }
+  ['s-place', 's-mode'].forEach(id => $(id).addEventListener('input', showEstimate));
+  $('s-mode').addEventListener('change', showEstimate);
+  $('s-kind').addEventListener('change', () => { if (!stopCtx || stopCtx.i < 0){ const k = $('s-kind').value; $('s-stay').value = { breakfast:'45', lunch:'60', dinner:'90', cafe:'45', snack:'15', sight:'120', shopping:'90', hotel:'30', other:'30' }[k] || '60'; } });
+  function openStop(dayId, stopId){
+    const day = planDays().find(x => x.id === dayId); if (!day) return;
+    const i = stopId ? day.stops.findIndex(s => s.id === stopId) : -1, st = i >= 0 ? day.stops[i] : null;
+    stopCtx = { day:JSON.parse(JSON.stringify(day)), i };
+    $('stop-title').textContent = st ? 'Edit stop' : 'Add a stop';
+    const sp = st && st.spot ? findPlace(st.spot) : null;
+    $('s-place').value = st ? (sp ? sp.name : st.name) : '';
+    const h = day.stops.length ? toMin(fmtT(timeline(day).slice(-1)[0].leave)) : toMin(day.start);
+    $('s-kind').value = st ? st.kind : (h < 630 ? 'breakfast' : h < 690 ? 'sight' : h < 840 ? 'lunch' : h < 1020 ? 'shopping' : 'dinner');
+    $('s-stay').value = st ? String(st.stay) : { breakfast:'45', lunch:'60', dinner:'90', sight:'120', shopping:'90' }[$('s-kind').value] || '60';
+    if (!$('s-stay').value){ const o = document.createElement('option'); o.value = String(st.stay); o.textContent = fmtDur(st.stay); $('s-stay').appendChild(o); $('s-stay').value = String(st.stay); }
+    $('s-mode').value = st ? st.mode || '' : ''; $('s-travel').value = st && st.travel != null ? st.travel : '';
+    $('s-at').value = st ? st.at || '' : ''; $('s-order').value = st ? st.order || '' : ''; $('s-note').value = st ? st.note || '' : '';
+    $('stop-moves').hidden = !st; $('stop-delete').hidden = !st;
+    $('stop-up').disabled = i <= 0; $('stop-down').disabled = i < 0 || i >= day.stops.length - 1;
+    showEstimate();
+    stopSheet.open();
+    setTimeout(() => ['s-order', 's-note'].forEach(id => { const el = $(id); el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }), 30);
+  }
+  $('stop-cancel').addEventListener('click', () => stopSheet.close());
+  $('stop-form').addEventListener('submit', e => {
+    e.preventDefault();
+    if (!stopCtx) return;
+    const name = $('s-place').value.trim(); if (!name) return;
+    const day = stopCtx.day, old = stopCtx.i >= 0 ? day.stops[stopCtx.i] : null;
+    const tr = $('s-travel').value.trim();
+    const st = Object.assign(placeFromName(name), {
+      id: old ? old.id : 's-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+      kind: $('s-kind').value, stay: +$('s-stay').value || 0, at: $('s-at').value || '',
+      mode: $('s-mode').value, travel: tr === '' ? null : Math.max(0, Math.min(600, Math.round(+tr) || 0)),
+      order: $('s-order').value.trim(), note: $('s-note').value.trim()
+    });
+    if (old) day.stops[stopCtx.i] = st; else day.stops.push(st);
+    stopSheet.close(); storeDay(day);
+  });
+  function moveStop(dir){
+    if (!stopCtx || stopCtx.i < 0) return;
+    const day = stopCtx.day, i = stopCtx.i, j = i + dir;
+    if (j < 0 || j >= day.stops.length) return;
+    [day.stops[i], day.stops[j]] = [day.stops[j], day.stops[i]];
+    stopSheet.close(); storeDay(day);
+  }
+  $('stop-up').addEventListener('click', () => moveStop(-1));
+  $('stop-down').addEventListener('click', () => moveStop(1));
+  $('stop-delete').addEventListener('click', () => {
+    if (!stopCtx || stopCtx.i < 0) return;
+    stopCtx.day.stops.splice(stopCtx.i, 1); stopSheet.close(); storeDay(stopCtx.day);
+  });
+
+  planPane.addEventListener('click', e => {
+    const b = e.target.closest('[data-pl]'), dayEl = e.target.closest('.plan-day'), stopEl = e.target.closest('.plan-stop');
+    const act = b ? b.dataset.pl : stopEl ? 'edit-stop' : null;
+    if (!act) return;
+    const dayId = dayEl && dayEl.dataset.day, stopId = stopEl && stopEl.dataset.stop;
+    if (act === 'add-day') openDay(null);
+    else if (act === 'edit-day') openDay(dayId);
+    else if (act === 'add-stop') openStop(dayId, null);
+    else if (act === 'edit-stop') openStop(dayId, stopId);
+    else if (act === 'dir' || act === 'map'){
+      const d = planDays().find(x => x.id === dayId), st = d && d.stops.find(s => s.id === stopId);
+      if (!st || !st.spot) return;
+      if (act === 'dir') openDirections(st.spot);
+      else { selectedId = st.spot; pendingView = 'sel'; switchTab('map'); renderMap(); }
+    }
+  });
+
   async function boot(){
     setupGuideTitle();
     syncChrome();
@@ -2120,8 +2363,10 @@
       userPlaces = [];
     }
     applyEdits();
+    cleanPlanPending();
     await loadPhotos();
     render();
+    renderPlan();
     startSync();
   }
 

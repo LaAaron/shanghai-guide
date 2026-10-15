@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The shared guide's inbox. The app files GitHub issues; this turns the valid ones into data files.
 
-Issues it understands (title prefix):   [new-spot]  [edit-spot]  [new-photo]  [remove-photo]  [new-link]  [review]
+Issues it understands (title prefix):   [new-spot]  [edit-spot]  [new-photo]  [remove-photo]  [new-link]  [review]  [plan]
 [new-link] runs extractor/ on the link (Claude + Apify, keys from the repository's secrets) and saves the places it finds in
 data/suggestions.js; [review] adds one of them to the guide or dismisses it.
 Everything in an issue is UNTRUSTED. It is parsed as JSON, validated field by field, images are decoded and re-encoded
@@ -411,7 +411,92 @@ def handle_remove(user, body, created=None):
     raise Done('added', 'Photo removed.', pid)
 
 
-HANDLERS = {'[new-spot]': handle_spot, '[edit-spot]': handle_edit, '[new-photo]': handle_photo, '[remove-photo]': handle_remove, '[new-link]': handle_link, '[review]': handle_review}
+# ---------------------------------------------------------------- [plan]: the shared day-by-day itinerary
+ITINERARY = 'data/itinerary.js'
+STOP_KINDS = ('breakfast', 'lunch', 'dinner', 'cafe', 'snack', 'sight', 'shopping', 'hotel', 'other')
+MODES = ('walk', 'metro', 'taxi', 'other')
+
+def load_itinerary():
+    if not os.path.exists(os.path.join(ROOT, ITINERARY)): return []
+    mm = re.search(r'SG\.ITINERARY = (\[.*\]);', rd(ITINERARY), re.S)
+    return json.loads(mm.group(1)) if mm else []
+
+def save_itinerary(days):
+    days = sorted(days, key=lambda d: (d['guide'], d['date'], d['id']))
+    body = ',\n'.join(' ' + json.dumps(d, ensure_ascii=False, separators=(',', ':')) for d in days)
+    wr(ITINERARY, '/* The shared day-by-day plan (Plan tab), for every guide. Written by tools/inbox.py from "[plan]" issues. Do not edit by hand. */\n'
+                  'window.SG = window.SG || {};\nSG.ITINERARY = [\n' + body + '\n];\n')
+
+def hhmm(raw, key, required=False):
+    v = text(raw, key, 5, required)
+    if v and not re.fullmatch(r'([01]\d|2[0-3]):[0-5]\d', v): raise Done('rejected', 'The time "%s" is not valid.' % key)
+    return v
+
+def minutes(raw, key, hi, allow_none=False):
+    v = raw.get(key)
+    if v is None and allow_none: return None
+    if isinstance(v, bool) or not isinstance(v, int) or not 0 <= v <= hi: raise Done('rejected', '"%s" must be a number of minutes.' % key)
+    return v
+
+def point(raw, g):
+    lat, lng = raw.get('lat'), raw.get('lng')
+    if lat is None and lng is None: return None, None
+    if isinstance(lat, bool) or isinstance(lng, bool) or not isinstance(lat, (int, float)) or not isinstance(lng, (int, float)): raise Done('rejected', 'A pin in the plan is not valid.')
+    a = g['area']
+    if not (a['latMin'] <= lat <= a['latMax'] and a['lngMin'] <= lng <= a['lngMax']): raise Done('rejected', 'A pin in the plan is outside %s.' % g['place'])
+    return round(float(lat), 6), round(float(lng), 6)
+
+def plan_place(raw, g):
+    """A place in the plan: a spot in the guide (by id) and/or a typed name, with its pin copied so it works on every phone."""
+    if not isinstance(raw, dict): raise Done('rejected', 'A stop in the plan is not valid.')
+    out = {'spot': text(raw, 'spot', 64), 'name': text(raw, 'name', 80)}
+    out['lat'], out['lng'] = point(raw, g)
+    return out
+
+def handle_plan(user, body, created=None):
+    check_user(user)
+    raw = json_block(body, 60000)
+    action, did = raw.get('action'), ident(raw, 'id')
+    rev = raw.get('rev')
+    if isinstance(rev, bool) or not isinstance(rev, int) or rev <= 0: raise Done('rejected', 'That plan change was not understood.')
+    days = load_itinerary()
+    old = next((d for d in days if d['id'] == did), None)
+    if old and old.get('rev', 0) >= rev: raise Done('duplicate', 'A newer version of that day is already saved, nothing changed.')
+    if action == 'delete':
+        if not old: raise Done('duplicate', 'That day was already removed, nothing changed.')
+        save_itinerary([d for d in days if d['id'] != did])
+        raise Done('added', 'Removed the day "%s" from the plan.' % (old.get('title') or old['date']), did)
+    if action != 'save' or not isinstance(raw.get('day'), dict): raise Done('rejected', 'That plan change was not understood.')
+    d = raw['day']
+    g = guide_of(d)
+    day = {'id': did, 'guide': g['id'], 'rev': rev}
+    day['date'] = text(d, 'date', 10, True)
+    if not re.fullmatch(r'20\d\d-[01]\d-[0-3]\d', day['date']): raise Done('rejected', 'The date is not valid.')
+    day['title'] = text(d, 'title', 60)
+    day['start'] = hhmm(d, 'start') or '09:00'
+    day['from'] = plan_place(d.get('from') or {}, g)
+    stops = d.get('stops') or []
+    if not isinstance(stops, list) or len(stops) > 40: raise Done('rejected', 'A day can have up to 40 stops.')
+    day['stops'] = []
+    for st in stops:
+        if not isinstance(st, dict): raise Done('rejected', 'A stop in the plan is not valid.')
+        o = plan_place(st, g)
+        if not (o['name'] or o['spot']): raise Done('rejected', 'Every stop needs a place or a name.')
+        o['id'] = ident(st, 'id')
+        o['kind'] = st.get('kind') if st.get('kind') in STOP_KINDS else 'other'
+        o['at'] = hhmm(st, 'at')
+        o['stay'] = minutes(st, 'stay', 720)
+        o['travel'] = minutes(st, 'travel', 600, allow_none=True)
+        o['mode'] = st.get('mode') if st.get('mode') in MODES else ''
+        o['order'] = clipped(text(st, 'order', 2000), 400)
+        o['note'] = clipped(text(st, 'note', 2000), 400)
+        day['stops'].append(o)
+    day['by'] = who(raw, user)
+    save_itinerary([x for x in days if x['id'] != did] + [day])
+    raise Done('added', 'Saved %s in the plan.' % (day['title'] or day['date']), did)
+
+
+HANDLERS = {'[new-spot]': handle_spot, '[edit-spot]': handle_edit, '[new-photo]': handle_photo, '[remove-photo]': handle_remove, '[new-link]': handle_link, '[review]': handle_review, '[plan]': handle_plan}
 
 
 # ---------------------------------------------------------------- GitHub plumbing
