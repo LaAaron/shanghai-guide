@@ -308,7 +308,7 @@
     const cc = CATEGORIES[cat] || CATEGORIES.other, c = cc.color, ink = cc.ink;
     return L.divIcon({
       className: '',
-      html: '<div class="gpin' + (selected ? ' sel' : '') + (hit === true ? ' hit' : hit === false ? ' dim' : '') + '"><svg viewBox="0 0 34 42" aria-hidden="true">' +
+      html: '<div class="gpin' + (selected ? ' sel' : '') + (hit === true ? ' hit' : hit === false ? ' dim' : '') + '" style="--glow:' + ink + '"><svg viewBox="0 0 34 42" aria-hidden="true">' +
         '<path d="M17 40C15 36 4.5 27.5 3.5 16A13.5 13.5 0 1 1 30.5 16C29.5 27.5 19 36 17 40z" fill="#3a2a1a" opacity=".16" transform="translate(0 2.4)"/>' +
         '<path d="M17 40C15 36 4.5 27.5 3.5 16A13.5 13.5 0 1 1 30.5 16C29.5 27.5 19 36 17 40z" fill="' + c + '" stroke="' + ink + '" stroke-opacity=".55" stroke-width="1.6" stroke-linejoin="round"/>' +
         '<g transform="translate(8 7) scale(.75)" fill="none" stroke="' + ink + '" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">' + (ICONS[cat] || ICONS.other) + '</g></svg></div>',
