@@ -790,7 +790,22 @@
   .plan-head h2{ font-size:22px; font-weight:700; letter-spacing:-.02em; }
   .plan-head p{ font-size:13px; color:var(--label-2); margin-top:2px; }
   .plan-day{ background:var(--row); border-radius:14px; margin-bottom:16px; overflow:hidden; }
-  .plan-day-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; padding:13px 14px 10px; cursor:pointer; border-bottom:.5px solid var(--sep); }
+  .plan-day-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; width:100%; padding:13px 14px 12px; cursor:pointer; border:0; background:none; text-align:left; color:inherit; font:inherit; }
+  .plan-day.open .plan-day-head{ border-bottom:.5px solid var(--sep); }
+  .plan-day-head:active{ background:var(--fill); }
+  .plan-day-main{ min-width:0; }
+  .plan-peek{ display:flex; align-items:center; gap:7px; margin-top:5px; font-size:13px; line-height:1.35; color:var(--label-2); }
+  .plan-dots{ display:inline-flex; flex:0 0 auto; }
+  .plan-peek-t{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .plan-day:not(.open) .plan-state{ margin:-6px 14px 12px; }
+  .plan-dots i{ width:9px; height:9px; border-radius:50%; margin-right:-2px; box-shadow:0 0 0 1.5px var(--row); }
+  .plan-span{ display:flex; align-items:center; gap:6px; }
+  .plan-chev{ width:11px; height:11px; transition:transform .2s var(--ease-out); }
+  .plan-day.open .plan-chev{ transform:rotate(180deg); }
+  .plan-day-foot{ display:flex; align-items:center; border-top:.5px solid var(--sep); }
+  .plan-day-foot .plan-add{ border-top:0; flex:1 1 auto; width:auto; }
+  .plan-foot-btn{ border:0; background:none; padding:12px 12px; font-size:14px; font-weight:500; color:var(--accent-ink); white-space:nowrap; }
+  .plan-foot-btn.plan-rm{ color:#c0392b; padding-right:14px; }
   .plan-date{ font-size:13px; font-weight:600; color:var(--accent-ink); text-transform:uppercase; letter-spacing:.03em; }
   .plan-title{ font-size:17px; font-weight:600; letter-spacing:-.011em; margin-top:2px; }
   .plan-span{ font-size:13px; color:var(--label-2); white-space:nowrap; padding-top:1px; font-variant-numeric:tabular-nums; }

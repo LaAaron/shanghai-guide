@@ -2121,6 +2121,10 @@
   const MODE_LABEL = { walk:'walk', metro:'by metro', taxi:'by taxi', other:'' };
   const planPane = $('plan-pane');
   const planPending = () => readJson(PLAN_KEY, {});
+  // which days are opened out on this phone (a per-phone convenience, not shared)
+  const OPEN_KEY = 'sg-plan-open';
+  const openDays = new Set(readJson(OPEN_KEY, []));
+  const saveOpen = () => writeJson(OPEN_KEY, Array.from(openDays));
   function planDays(){
     const pend = planPending(), byId = new Map(PUBLISHED_DAYS.map(d => [d.id, d]));
     Object.values(pend).forEach(p => {
@@ -2209,10 +2213,16 @@
     days.forEach((d, di) => {
       const rows = timeline(d), p = pend[d.id], from = d.from && (d.from.name || (d.from.spot && (findPlace(d.from.spot) || {}).name));
       const state = p && !p.deleted ? (p.rejected ? '<span class="plan-state warn">Not saved: ' + esc(p.rejected) + '</span>' : '<span class="plan-state">' + (p.issue ? 'Sent' : syncKey() ? 'Waiting to send' : 'On this phone only') + '</span>') : '';
-      h += '<section class="plan-day" data-day="' + esc(d.id) + '"><div class="plan-day-head" data-pl="edit-day">' +
-        '<div><div class="plan-date">Day ' + (di + 1) + ' · ' + esc(dayLabel(d)) + '</div>' + (d.title ? '<div class="plan-title">' + esc(d.title) + '</div>' : '') + '</div>' +
-        '<div class="plan-span">' + esc(d.start) + (rows.length ? '–' + fmtT(rows[rows.length - 1].leave) : '') + '</div></div>' + state +
-        '<ol class="plan-stops"><li class="plan-start"><span class="pt">' + esc(d.start) + '</span><span class="pn">Leave' + (from ? ' ' + esc(from) : '') + '</span></li>';
+      const open = openDays.has(d.id);
+      const peek = rows.map(r => { const sp = r.st.spot ? findPlace(r.st.spot) : null; return sp ? sp.name : r.st.name; });
+      const dots = rows.map(r => { const sp = r.st.spot ? findPlace(r.st.spot) : null, c = CATEGORIES[sp ? sp.cat : KIND_CAT[r.st.kind]] || CATEGORIES.other; return '<i style="background:' + c.color + '"></i>'; }).join('');
+      h += '<section class="plan-day' + (open ? ' open' : '') + '" data-day="' + esc(d.id) + '"><button type="button" class="plan-day-head" data-pl="toggle-day" aria-expanded="' + open + '">' +
+        '<div class="plan-day-main"><div class="plan-date">Day ' + (di + 1) + ' · ' + esc(dayLabel(d)) + '</div>' + (d.title ? '<div class="plan-title">' + esc(d.title) + '</div>' : '') +
+        (!open ? '<div class="plan-peek">' + (rows.length ? '<span class="plan-dots">' + dots + '</span><span class="plan-peek-t">' + esc(rows.length + (rows.length === 1 ? ' stop' : ' stops') + ' · ' + peek.map(n => n.replace(/\s*[（(].*$/, '')).join(' → ')) + '</span>' : 'No stops yet') + '</div>' : '') + '</div>' +
+        '<div class="plan-span">' + esc(d.start) + (rows.length ? '–' + fmtT(rows[rows.length - 1].leave) : '') + '<svg class="plan-chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg></div></button>' + state +
+        (!open ? '</section>' : '') ;
+      if (!open) return;
+      h += '<ol class="plan-stops"><li class="plan-start"><span class="pt">' + esc(d.start) + '</span><span class="pn">Leave' + (from ? ' ' + esc(from) : '') + '</span></li>';
       rows.forEach((r, i) => {
         const st = r.st, sp = st.spot ? findPlace(st.spot) : null, name = sp ? sp.name : st.name;
         const c = CATEGORIES[sp ? sp.cat : KIND_CAT[st.kind]] || CATEGORIES.other;
@@ -2229,7 +2239,8 @@
             '<button type="button" class="plan-rm" data-pl="remove-stop">Remove</button></span></span>' +
           (rows.length > 1 ? '<span class="plan-grip" aria-label="Drag to reorder" title="Drag to reorder"><svg viewBox="0 0 12 20" fill="currentColor" aria-hidden="true"><circle cx="3" cy="4" r="1.6"/><circle cx="9" cy="4" r="1.6"/><circle cx="3" cy="10" r="1.6"/><circle cx="9" cy="10" r="1.6"/><circle cx="3" cy="16" r="1.6"/><circle cx="9" cy="16" r="1.6"/></svg></span>' : '') + '</li>';
       });
-      h += '</ol><button type="button" class="plan-add" data-pl="add-stop">+ Add a stop</button></section>';
+      h += '</ol><div class="plan-day-foot"><button type="button" class="plan-add" data-pl="add-stop">+ Add a stop</button>' +
+        '<button type="button" class="plan-foot-btn" data-pl="edit-day">Edit day</button><button type="button" class="plan-foot-btn plan-rm" data-pl="delete-day">Delete day</button></div></section>';
     });
     planPane.innerHTML = h;
   }
@@ -2292,7 +2303,7 @@
     day.date = $('d-date').value; day.start = $('d-start').value || '09:00'; day.title = $('d-name').value.trim();
     day.from = $('d-from').value.trim() ? placeFromName($('d-from').value) : { spot:'', name:'', lat:null, lng:null };
     if (!/^\d{4}-\d\d-\d\d$/.test(day.date)){ toast('Pick a date for this day.'); return; }
-    daySheet.close(); storeDay(day);
+    daySheet.close(); openDays.add(day.id); saveOpen(); storeDay(day);
   });
   $('day-delete').addEventListener('click', () => {
     if (!editingDay || !window.confirm('Delete this day and its stops from the plan, for everyone?')) return;
@@ -2417,6 +2428,13 @@
     const dayId = dayEl && dayEl.dataset.day, stopId = stopEl && stopEl.dataset.stop;
     if (act === 'add-day') openDay(null);
     else if (act === 'edit-day') openDay(dayId);
+    else if (act === 'toggle-day'){ openDays.has(dayId) ? openDays.delete(dayId) : openDays.add(dayId); saveOpen(); renderPlan(); }
+    else if (act === 'delete-day'){
+      const d = planDays().find(x => x.id === dayId); if (!d) return;
+      const before = JSON.parse(JSON.stringify(d));
+      storeDay(d, true);
+      toast('Deleted ' + (d.title || dayLabel(d)) + '.', { action:'Undo', ms:6000, onAction: () => storeDay(before) });
+    }
     else if (act === 'add-stop') openStop(dayId, null);
     else if (act === 'edit-stop') openStop(dayId, stopId);
     else if (act === 'remove-stop'){
