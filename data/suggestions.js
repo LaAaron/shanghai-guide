@@ -1,4 +1,5 @@
 /* Places found in links sent from the app, waiting for review (tools/inbox.py). Do not edit by hand. */
 window.SG = window.SG || {};
 SG.SUGGESTIONS = [
+ {"id":"l-mva1mzg4-tmlo5k","url":"https://www.instagram.com/reel/DcWAtmepiXm/?psln=dnplaWdyMWhzMWdj","title":"@aniajar","summary":"An Instagram reel showcases a Shanghai ice cream and mochi shop called 'Ah Ma Handmade' (阿嬷手作), showing the handmade process and the final mochi ice cream dessert.","by":"Riya","at":"2026-10-15","places":[{"i":0,"guide":"shanghai","spot":{"id":"ah-ma-handmade","name":"Ah Ma Handmade","zh":"阿嬷手作","cat":"dessert","district":"Multiple","addr":"","note":"Handmade mochi ice cream shop; watch fresh mochi made in-house and paired with soft serve. Sign reads 'Hand Made' and 'Cashier/Ice Cream'. Exact branch location not shown.","lat":null,"lng":null,"approx":true,"flag":"Shop name visible on cups and storefront sign but exact branch/address not shown in video; multiple locations may exist."},"confidence":"unknown","evidence":"on-screen text and shop sign at 0:00, 0:09, 0:10, 0:13","duplicate_of":"ah-ma"}]}
 ];
