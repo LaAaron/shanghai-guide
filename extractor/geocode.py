@@ -8,7 +8,7 @@ guide's area. A result only counts if it is a building, mall or venue (not a who
 Pins found this way are usually the building or mall, not the exact shop door, so the spot is marked approximate.
 Nominatim asks for at most one request a second and a clear User-Agent; both are respected here.
 """
-import difflib, json, math, os, time, urllib.parse
+import difflib, json, math, os, re, time, urllib.parse
 
 import sources
 from amap import DISTRICTS_ZH
@@ -57,7 +57,7 @@ def search_terms(spot, guide):
         'A travel guide spot in %s, China needs a map pin. Write up to 4 short Chinese search terms that OpenStreetMap '
         'would know, most specific first: the building, mall or residential complex in the address (its usual Chinese '
         'name, e.g. "Zhuoyue Center Western District" -> 卓悦中心西区, "Holiday Plaza" -> 益田假日广场), then the place '
-        'itself if it is a well-known venue. Never a generic word (火锅, 餐厅, 咖啡) or just a road name. Several malls or buildings often share a name (万象城, 万象天地, 万象前海...): '
+        'itself if it is a well-known venue. Never a generic word (火锅, 餐厅, 咖啡) or just a road name. For a park, sight or venue give its usual Chinese name, translated word for word ("Talent Park" -> 人才公园, "Shenzhen Bay Park" -> 深圳湾公园), not a different place with a similar name. Several malls or buildings often share a name (万象城, 万象天地, 万象前海...): '
         'use the street and number in the address to work out which one it is, and name that one exactly (e.g. '
         '"Shennan Avenue No.9668 The Mixc" is 深圳湾万象城, not just 万象城). Do not include the city name, shop unit '
         'numbers or floors. Also give the '
@@ -112,16 +112,26 @@ def find_pin(spot, guide):
     zh = (spot.get('zh') or '').replace(' ', '')
     own = lambda q: bool(zh) and (q.replace(' ', '') in zh or zh in q.replace(' ', ''))
     queries = [q for q in queries if not own(q)] + [q for q in queries if own(q)]
-    for q in dict.fromkeys(queries):
+    # 梧桐山风景区 is known to the map as 梧桐山: also try the name without "scenic area" style endings
+    variants = []
+    for q in queries:
+        variants.append(q)
+        short = re.sub(r'(风景名胜区|风景区|景区|旅游区)$', '', q)
+        if short != q and len(short) >= 2: variants.append(short)
+    fallback = None                       # a landmark that matched by name but whose district text differs
+    for q in list(dict.fromkeys(variants))[:8]:
         try:
             results = nominatim(q + (' ' + city if city else ''), guide['area'])
         except Exception as e:
-            print('  geocode: lookup failed (%s)' % e); return None
+            print('  geocode: lookup failed (%s)' % e); break
         for r in results:
             if r.get('category') in ('highway', 'boundary', 'place') or r.get('type') in TOO_BIG: continue      # roads and whole areas
-            if want and want not in r.get('display_name', ''): continue
             name = (r.get('name') or r.get('display_name', '').split(',')[0]).strip()
             if not same_name(q, name): continue                  # something else that merely matched a word
             lat, lng = wgs2gcj(float(r['lat']), float(r['lon']))
-            return round(lat, 6), round(lng, 6), r.get('name') or q
-    return None
+            found = round(lat, 6), round(lng, 6), r.get('name') or q
+            if not want or want in r.get('display_name', ''): return found
+            # no district given by the map (a mountain, say): fine for a building or landmark, never for the shop's
+            # own name (that may be another branch of a chain), and never when the map puts it in another district
+            if fallback is None and not own(q) and not any(d in r.get('display_name', '') for d in DISTRICTS_ZH): fallback = found
+    return fallback
