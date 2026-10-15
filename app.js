@@ -1020,7 +1020,7 @@
     setReviewMode(true, 'Edit place');
     $('f-name').value = p.name || ''; $('f-zh').value = p.zh || '';
     catSelect.value = CATEGORIES[p.cat] ? p.cat : 'other';
-    $('f-district').value = p.district && p.district !== 'Unsorted' ? p.district : '';
+    setDistrict(p.district);
     $('f-addr').value = p.addr || ''; $('f-note').value = p.note || ''; $('f-src').value = p.src || '';
     if (p.lat && p.lng) setLoc(p.lat, p.lng, p.approx ? 'current pin, approximate' : 'current pin');
     fitBoxes();
@@ -1095,19 +1095,59 @@
   }
   const locReadout = $('loc-readout');
   function showLoc(msg, cls){ locReadout.textContent = msg; locReadout.className = 'loc-readout' + (cls ? ' ' + cls : ''); }
+  // ---- district: picked from the list, or worked out from the pin with the district shapes the map draws (offline)
+  function inRing(lng, lat, ring){
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++){
+      const [xi, yi] = ring[i], [xj, yj] = ring[j];
+      if ((yi > lat) !== (yj > lat) && lng < (xj - xi) * (lat - yi) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+  function districtAt(lat, lng){
+    for (const f of (SH_DISTRICTS && SH_DISTRICTS.features) || []){
+      const g = f.geometry, polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
+      if (polys.some(p => inRing(lng, lat, p[0]) && !p.slice(1).some(h => inRing(lng, lat, h)))) return f.properties.en;
+    }
+    return '';
+  }
+  const distSelect = $('f-district');
+  const DISTRICT_LIST = Array.from(new Set((((SH_DISTRICTS && SH_DISTRICTS.features) || []).map(f => f.properties.en))
+    .concat(allPlaces().map(p => p.district)).filter(d => d && d !== 'Unsorted'))).sort((a, b) => (a === 'Multiple') - (b === 'Multiple') || a.localeCompare(b));
+  [['', 'Automatic']].concat(DISTRICT_LIST.map(d => [d, d === 'Multiple' ? 'Multiple (a chain)' : d])).forEach(([v, t]) => {
+    const o = document.createElement('option'); o.value = v; o.textContent = t; distSelect.appendChild(o);
+  });
+  function pinLatLng(){ const lat = parseFloat($('f-lat').value), lng = parseFloat($('f-lng').value); return isFinite(lat) && isFinite(lng) ? [lat, lng] : null; }
+  function autoDistrict(){ const p = pinLatLng(); return p ? districtAt(p[0], p[1]) : ''; }
+  // the "Automatic" choice says what it will be: the pin's district, or found later from the address
+  function updateAutoDistrict(){
+    const d = autoDistrict();
+    distSelect.options[0].textContent = d ? 'Automatic: ' + d : 'Automatic (from the pin or address)';
+  }
+  function setDistrict(d){
+    if (d && d !== 'Unsorted' && !Array.from(distSelect.options).some(o => o.value === d)){
+      const o = document.createElement('option'); o.value = d; o.textContent = d; distSelect.appendChild(o);
+    }
+    distSelect.value = d && d !== 'Unsorted' ? d : '';
+    updateAutoDistrict();
+  }
+  updateAutoDistrict();
+
   function setLoc(lat, lng, source){
     $('f-lat').value = lat.toFixed(6); $('f-lng').value = lng.toFixed(6);
     showLoc(lat.toFixed(5) + ', ' + lng.toFixed(5) + ' · ' + source, 'ok');
+    updateAutoDistrict();
     clearPickMarker();
     if (map) pickMarker = L.marker([lat, lng], { icon: pinIcon(catSelect.value, true), keyboard:false, interactive:false, zIndexOffset:2000 }).addTo(map);
   }
-  function resetLoc(){ showLoc('No location yet'); clearPickMarker(); }
+  function resetLoc(){ showLoc('No location yet'); clearPickMarker(); setTimeout(updateAutoDistrict); }
   function syncTyped(){
     const lat = parseFloat($('f-lat').value), lng = parseFloat($('f-lng').value);
     if (isFinite(lat) && isFinite(lng)){
       if (!inArea(lat, lng)) showLoc('That’s outside the ' + GUIDE.place + ' area this guide covers.', 'err');
       else showLoc(lat.toFixed(5) + ', ' + lng.toFixed(5) + ' · typed', 'ok');
     } else showLoc('No location yet');
+    updateAutoDistrict();
   }
   $('f-lat').addEventListener('input', syncTyped); $('f-lng').addEventListener('input', syncTyped);
 
@@ -1216,7 +1256,7 @@
       name: name,
       zh: $('f-zh').value.trim(),
       cat: catSelect.value,
-      district: $('f-district').value.trim() || "Unsorted",
+      district: distSelect.value || autoDistrict() || "Unsorted",      // Automatic with no pin: found from the address on GitHub
       addr: $('f-addr').value.trim(),
       note: $('f-note').value.trim(),
       lat: isFinite(lat) ? lat : null,
@@ -1723,7 +1763,7 @@
       editingReview = { sid, i, spot:s }; setReviewMode(true);
       $('f-name').value = s.name || ''; $('f-zh').value = s.zh || '';
       catSelect.value = CATEGORIES[s.cat] ? s.cat : 'other';
-      $('f-district').value = s.district && s.district !== 'Unsorted' ? s.district : '';
+      setDistrict(s.district);
       $('f-addr').value = s.addr || ''; $('f-note').value = s.note || ''; $('f-src').value = cleanSrc(x.url);
       fitBoxes();
       if (s.lat != null && s.lng != null) setLoc(s.lat, s.lng, s.approx ? 'from the link, approximate' : 'from the link');

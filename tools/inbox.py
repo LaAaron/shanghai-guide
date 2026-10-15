@@ -184,6 +184,32 @@ def store_spot(spot, g):
     save_added(added, g)
 
 
+_DISTRICT_SHAPES = {}
+def district_at(g, lat, lng):
+    """The district (English, as the guide writes it) a GCJ-02 point is in, from the guide's own district shapes (geo.js)."""
+    if g['id'] not in _DISTRICT_SHAPES:
+        s = rd(os.path.join(os.path.dirname(g['places']), 'geo.js'))
+        i = s.index('SG.SH_DISTRICTS = ') + len('SG.SH_DISTRICTS = ')
+        _DISTRICT_SHAPES[g['id']] = json.JSONDecoder().raw_decode(s[i:])[0]['features']
+    def inside(ring):
+        c = False
+        for (xi, yi), (xj, yj) in zip(ring, ring[-1:] + ring[:-1]):
+            if (yi > lat) != (yj > lat) and lng < (xj - xi) * (lat - yi) / (yj - yi) + xi: c = not c
+        return c
+    for f in _DISTRICT_SHAPES[g['id']]:
+        geo = f['geometry']
+        polys = [geo['coordinates']] if geo['type'] == 'Polygon' else geo['coordinates'] if geo['type'] == 'MultiPolygon' else []
+        if any(inside(p[0]) and not any(inside(h) for h in p[1:]) for p in polys): return f['properties']['en']
+    return ''
+
+
+def fill_district(spot, g):
+    """A spot saved without a district ("Automatic" in the app) gets the district its pin is in."""
+    if spot.get('district') in (None, '', 'Unsorted') and spot.get('lat') is not None:
+        try: spot['district'] = district_at(g, spot['lat'], spot['lng']) or 'Unsorted'
+        except Exception as e: print('district lookup failed: %s' % e)
+
+
 def pin_from_address(spot, g):
     """A spot with an address but no pin gets one from OpenStreetMap (extractor/geocode.py), marked approximate.
     Any failure just leaves the spot without a pin."""
@@ -205,6 +231,7 @@ def handle_spot(user, body, created=None):
     g = guide_of(raw)
     spot = spot_from(raw, g, user)
     pin_from_address(spot, g)
+    fill_district(spot, g)
     store_spot(spot, g)
     raise Done('added', 'Added "%s". It will be live in about a minute; open the app while online and tap "Update ready".' % spot['name'], spot['name'])
 
@@ -229,6 +256,7 @@ def handle_edit(user, body, created=None):
     if not fields.get('flag'): fields.pop('flag', None)
     spot = spot_from(fields, g, user)
     pin_from_address(spot, g)
+    fill_district(spot, g)
     if i is not None:
         spot['by'], spot['at'] = old.get('by', spot['by']), old.get('at', spot['at'])     # still credited to whoever added it
         if spot == old: raise Done('duplicate', 'Nothing changed in "%s".' % spot['name'], spot['name'])
@@ -279,7 +307,8 @@ def handle_link(user, body, created=None):
         base, n = sp['id'], 2
         while sp['id'] in taken: sp['id'], n = '%s-%d' % (base, n), n + 1
         taken.add(sp['id'])
-        pin_from_address(sp, next(gg for gg in guides() if gg['id'] == x['guide']))
+        gg = next(gg for gg in guides() if gg['id'] == x['guide'])
+        pin_from_address(sp, gg); fill_district(sp, gg)
         out.append({'i': i, 'guide': x['guide'], 'spot': sp, 'confidence': x['confidence'], 'evidence': x['evidence'][:120],
                     'duplicate_of': x['duplicate_of']})
     sugs.append({'id': lid, 'url': url, 'title': (r['title'] or '')[:120], 'summary': (r['summary'] or '')[:300], 'by': who(raw, user),
@@ -317,6 +346,7 @@ def handle_review(user, body, created=None):
     fields['who'] = raw.get('who', '')
     spot = spot_from(fields, g, user, src=s['url'])
     pin_from_address(spot, g)
+    fill_district(spot, g)
     try:
         store_spot(spot, g)
     except Done as d:
