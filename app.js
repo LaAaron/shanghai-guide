@@ -942,6 +942,23 @@
     $('dir-backdrop').querySelector('.sheet-body').scrollTop = 0;
   }
 
+  // AMap links open the AMap app on phones; if it isn't installed (the page is still showing after a moment), the web page opens instead
+  const IS_ANDROID = /Android/i.test(navigator.userAgent);
+  const IS_IOS = !IS_ANDROID && (/iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));   // iPads report a Mac
+  ['lnk-amap', 'lnk-amap-search'].forEach(id => $(id).addEventListener('click', e => {
+    const a = e.currentTarget, app = a.dataset.app;
+    if (!app) return;                                                      // computer: the web page
+    e.preventDefault();
+    let left = false;
+    const gone = () => { left = true; };
+    document.addEventListener('visibilitychange', gone, { once:true });
+    window.addEventListener('pagehide', gone, { once:true });
+    window.location.href = app;
+    setTimeout(() => {
+      document.removeEventListener('visibilitychange', gone); window.removeEventListener('pagehide', gone);
+      if (!left && !document.hidden) window.location.href = a.href;      // a pop-up would be blocked this late
+    }, 1600);
+  }));
   function updateLinks(){
     const p = dirTarget; if (!p) return;
     const has = !!(p.lat && p.lng);
@@ -965,11 +982,17 @@
               '&mode=' + amapMode + '&policy=0&coordinate=gaode&callnative=1&src=shanghai-guide';
       if (from) u += '&from=' + from.lng + ',' + from.lat + ',' + q(from.zh || from.name);
       amap.href = u; amap.hidden = false;
+      // the AMap app itself (coordinates are already GCJ-02, so dev=0); without "from" it starts at your location
+      const t = { walk:2, transit:1, drive:0, bike:3 }[dirMode];
+      const ends = (from ? '&slat=' + from.lat + '&slon=' + from.lng + '&sname=' + q(from.zh || from.name) : '') + '&dlat=' + p.lat + '&dlon=' + p.lng + '&dname=' + q(label) + '&dev=0&t=' + t;
+      amap.dataset.app = IS_IOS ? 'iosamap://path?sourceApplication=shanghaiguide' + ends : IS_ANDROID ? 'amapuri://route/plan/?sourceApplication=shanghaiguide' + ends : '';
       amap.querySelector('.lbl').textContent = fromText ? '高德 AMap · directions (uses current location)' : '高德 AMap · directions';
     } else { amap.hidden = true; }
     if (!chinaMaps) amap.hidden = true;
+    const kw = q(p.searchName || p.zh || p.name);
     $('lnk-amap-search').href =
-      'https://uri.amap.com/search?keyword=' + q(p.searchName || p.zh || p.name) + '&city=' + (GUIDE.amapCity || '') + '&callnative=1&src=shanghai-guide';
+      'https://uri.amap.com/search?keyword=' + kw + '&city=' + (GUIDE.amapCity || '') + '&callnative=1&src=shanghai-guide';
+    $('lnk-amap-search').dataset.app = IS_IOS ? 'iosamap://poi?sourceApplication=shanghaiguide&name=' + kw : IS_ANDROID ? 'androidamap://poi?sourceApplication=shanghaiguide&keywords=' + kw + '&dev=0' : '';
 
     const dest = has ? (p.lat + ',' + p.lng) : (p.addr || p.name) + ', ' + GUIDE.place;
     let apple = 'https://maps.apple.com/?daddr=' + q(dest) + '&dirflg=' + appleMode;
