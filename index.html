@@ -320,7 +320,7 @@
             <div class="field"><label for="d-start">Leave at</label><input id="d-start" type="time" value="09:00" required></div>
           </div>
           <div class="field"><label for="d-name">Name (optional)</label><input id="d-name" type="text" maxlength="60" placeholder="e.g. Futian food crawl"></div>
-          <div class="field"><label for="d-from">Leaving from (optional)</label><input id="d-from" type="text" list="plan-places" maxlength="80" placeholder="Your hotel, or any spot in the guide"></div>
+          <div class="field"><label for="d-from">Leaving from (optional)</label><input id="d-from" type="text" maxlength="80" placeholder="Tap to choose, or type to search" autocomplete="off" autocorrect="off" spellcheck="false"></div>
         </div>
         <p class="hint">Times for every stop are worked out from when you leave, how long each journey takes and how long you stay.</p>
         <button type="button" class="danger-btn" id="day-delete" hidden>Delete this day</button>
@@ -342,7 +342,7 @@
     <div class="sheet-body">
       <form id="stop-form" autocomplete="off">
         <div class="form-group">
-          <div class="field"><label for="s-place">Place</label><input id="s-place" type="text" list="plan-places" maxlength="80" placeholder="Pick a spot from the guide, or type a name" required></div>
+          <div class="field"><label for="s-place">Place</label><input id="s-place" type="text" maxlength="80" placeholder="Tap to choose, or type any name" autocomplete="off" autocorrect="off" spellcheck="false" required></div>
           <div class="field-row">
             <div class="field"><label for="s-kind">What</label>
               <select id="s-kind">
@@ -382,7 +382,6 @@
     </div>
   </div>
 </div>
-<datalist id="plan-places"></datalist>
 
 <script src="vendor/leaflet.js"></script>
 <script src="data/guides.js"></script>

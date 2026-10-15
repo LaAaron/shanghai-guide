@@ -2203,8 +2203,6 @@
   function renderPlan(){
     if (!planPane) return;
     const days = planDays(), pend = planPending();
-    const opts = document.getElementById('plan-places');
-    if (opts) opts.innerHTML = allPlaces().map(p => '<option value="' + esc(p.name) + '">' + esc(p.zh || '') + '</option>').join('');
     let h = '<div class="plan-head"><div><h2>Plan</h2><p>' + esc(GUIDE.place) + ' · ' + (days.length ? days.length + (days.length === 1 ? ' day' : ' days') : 'no days yet') + '</p></div>' +
       '<button type="button" class="dir-btn primary" data-pl="add-day">Add a day</button></div>';
     if (!days.length) h += '<div class="empty-msg">Add a day, then add the places you\'ll go in order: breakfast, sights, lunch, shopping, dinner…<br>Times are worked out as you go, and you can note what to order.</div>';
@@ -2235,6 +2233,40 @@
     planPane.innerHTML = h;
   }
 
+  // ---- place picker: a list under the box that opens on tap, filters as you type and scrolls (iPhone Safari has no good built-in one)
+  function placePicker(input, hotelsFirst){
+    const box = document.createElement('div'); box.className = 'pick-list'; box.hidden = true;
+    input.closest('.field').appendChild(box);
+    let items = [];
+    function show(){
+      const q = input.value.trim().toLowerCase();
+      items = allPlaces().filter(p => !q || (p.name + ' ' + (p.zh || '') + ' ' + (p.district || '') + ' ' + (p.addr || '')).toLowerCase().includes(q))
+        .sort((a, b) => (hotelsFirst ? (b.cat === 'stay') - (a.cat === 'stay') : 0) || (q ? a.name.toLowerCase().indexOf(q) - b.name.toLowerCase().indexOf(q) : 0) || a.name.localeCompare(b.name));
+      const exact = items.some(p => p.name.toLowerCase() === q);
+      box.innerHTML = (q && !exact ? '<button type="button" class="pick-row typed" data-i="-1"><span class="pick-name">Use “' + esc(input.value.trim()) + '”</span><span class="pick-sub">not in the guide, no pin</span></button>' : '') +
+        items.slice(0, 80).map((p, i) => { const c = CATEGORIES[p.cat] || CATEGORIES.other;
+          return '<button type="button" class="pick-row" data-i="' + i + '"><i style="background:' + c.color + '"></i><span class="pick-name">' + esc(p.name) + '</span>' +
+            '<span class="pick-sub">' + esc([p.zh, p.district !== 'Unsorted' ? p.district : '', c.label].filter(Boolean).join(' · ')) + '</span></button>'; }).join('') +
+        (!items.length && !q ? '<div class="pick-empty">No spots in this guide yet</div>' : '');
+      box.hidden = !box.innerHTML;
+      box.scrollTop = 0;
+    }
+    function hide(){ box.hidden = true; }
+    input.addEventListener('focus', show);
+    input.addEventListener('input', show);
+    input.addEventListener('blur', () => setTimeout(hide, 150));
+    box.addEventListener('pointerdown', e => e.preventDefault());           // keep the keyboard/focus while choosing
+    box.addEventListener('click', e => {
+      const b = e.target.closest('.pick-row'); if (!b) return;
+      const i = +b.dataset.i;
+      if (i >= 0) input.value = items[i].name;
+      hide(); input.blur();
+      input.dispatchEvent(new Event('input')); hide();
+    });
+    return { hide };
+  }
+  const fromPicker = placePicker($('d-from'), true), placePickerStop = placePicker($('s-place'), false);
+
   // ---- day sheet
   const daySheet = makeSheet($('day-backdrop'), $('day-sheet'));
   let editingDay = null;
@@ -2249,6 +2281,7 @@
     $('d-name').value = d ? d.title || '' : '';
     $('d-from').value = d ? (d.from && (d.from.name || '')) : (last && last.from ? last.from.name || '' : '');
     $('day-delete').hidden = !d;
+    fromPicker.hide();
     daySheet.open();
   }
   $('day-cancel').addEventListener('click', () => daySheet.close());
@@ -2298,6 +2331,7 @@
     $('stop-moves').hidden = !st; $('stop-delete').hidden = !st;
     $('stop-up').disabled = i <= 0; $('stop-down').disabled = i < 0 || i >= day.stops.length - 1;
     showEstimate();
+    placePickerStop.hide();
     stopSheet.open();
     setTimeout(() => ['s-order', 's-note'].forEach(id => { const el = $(id); el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }), 30);
   }
