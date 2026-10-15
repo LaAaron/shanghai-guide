@@ -103,6 +103,7 @@
   const isFood = cat => !!(CATEGORIES[cat] && CATEGORIES[cat].group === 'food');
   const catMatches = (p, cats) => !cats.size || cats.has(p.cat) || (cats.has('food') && isFood(p.cat));
   const foodOpen = () => activeCats.has('food') || [...activeCats].some(isFood);
+  function matchesChips(p){ return catMatches(p, activeCats) && (activeDistrict === "all" || p.district === activeDistrict); }
   function matchesFilters(p){
     if (!catMatches(p, activeCats)) return false;
     if (activeDistrict !== "all" && p.district !== activeDistrict) return false;
@@ -303,11 +304,11 @@
   });
 
   /* ---------- Map pins ---------- */
-  function pinIcon(cat, selected){
+  function pinIcon(cat, selected, hit){
     const cc = CATEGORIES[cat] || CATEGORIES.other, c = cc.color, ink = cc.ink;
     return L.divIcon({
       className: '',
-      html: '<div class="gpin' + (selected ? ' sel' : '') + '"><svg viewBox="0 0 34 42" aria-hidden="true">' +
+      html: '<div class="gpin' + (selected ? ' sel' : '') + (hit === true ? ' hit' : hit === false ? ' dim' : '') + '"><svg viewBox="0 0 34 42" aria-hidden="true">' +
         '<path d="M17 40C15 36 4.5 27.5 3.5 16A13.5 13.5 0 1 1 30.5 16C29.5 27.5 19 36 17 40z" fill="#3a2a1a" opacity=".16" transform="translate(0 2.4)"/>' +
         '<path d="M17 40C15 36 4.5 27.5 3.5 16A13.5 13.5 0 1 1 30.5 16C29.5 27.5 19 36 17 40z" fill="' + c + '" stroke="' + ink + '" stroke-opacity=".55" stroke-width="1.6" stroke-linejoin="round"/>' +
         '<g transform="translate(8 7) scale(.75)" fill="none" stroke="' + ink + '" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">' + (ICONS[cat] || ICONS.other) + '</g></svg></div>',
@@ -343,18 +344,21 @@
     Object.values(markers).forEach(m => map.removeLayer(m));
     markers = {};
     const pad = mapPad();
-    const withCoords = allPlaces().filter(matchesFilters).filter(p => p.lat && p.lng);
+    // while searching, the map keeps every spot (so zooming out still shows them) and makes the matches big
+    const withCoords = allPlaces().filter(searchTerm ? matchesChips : matchesFilters).filter(p => p.lat && p.lng);
+    const hitOf = p => searchTerm ? matchesSearch(p) : undefined;
 
     const seen = {};
     withCoords.forEach(p => {
       const k = p.lat.toFixed(4) + ',' + p.lng.toFixed(4);
       const n = seen[k] = (seen[k] || 0) + 1;
       const off = n > 1 ? 0.00025 * n : 0;
-      const marker = L.marker([p.lat + off*Math.sin(n*2), p.lng + off*Math.cos(n*2)], { icon: pinIcon(p.cat, p.id === selectedId), keyboard:false });
+      const marker = L.marker([p.lat + off*Math.sin(n*2), p.lng + off*Math.cos(n*2)], { icon: pinIcon(p.cat, p.id === selectedId, hitOf(p)), keyboard:false });
       marker.bindPopup(() => popupHtml(p), { maxWidth:280, minWidth:220, closeButton:false, autoPanPaddingTopLeft:[16, pad.top], autoPanPaddingBottomRight:[16, pad.bottom] });
       marker.on('click', () => selectPlace(p.id, false));
       marker.addTo(map);
       if (p.id === selectedId) marker.setZIndexOffset(1000);
+      else if (hitOf(p) === true) marker.setZIndexOffset(800);
       markers[p.id] = marker;
     });
     updateLabelsFn();
@@ -367,7 +371,7 @@
       const m = markers[k], el = m.getElement && m.getElement(), g = el && el.querySelector('.gpin');
       const on = k === id;
       if (g) g.classList.toggle('sel', on);
-      m.setZIndexOffset(on ? 1000 : 0);
+      m.setZIndexOffset(on ? 1000 : g && g.classList.contains('hit') ? 800 : 0);
     });
     if (!id) return;
     const row = Array.from(listPane.querySelectorAll('.place-card')).find(el => el.dataset.id === id);
@@ -397,10 +401,10 @@
   function fitVisible(){
     if (!map) return;
     if (mapHidden()){ pendingView = 'fit'; return; }
-    const pts = allPlaces().filter(matchesFilters).filter(p => p.lat && p.lng && p.district !== 'Multiple').map(p => [p.lat, p.lng]);
+    const pts = allPlaces().filter(matchesFilters).filter(p => p.lat && p.lng && (searchTerm || p.district !== 'Multiple')).map(p => [p.lat, p.lng]);
     if (!pts.length) return;
     const pad = mapPad();
-    map.fitBounds(pts, { paddingTopLeft:[40, pad.top + 24], paddingBottomRight:[40, pad.bottom + 24], maxZoom:16 });
+    map.fitBounds(pts, { paddingTopLeft:[40, pad.top + 24], paddingBottomRight:[40, pad.bottom + 24], maxZoom: searchTerm ? 17 : 16 });   // a search zooms right in on its matches
   }
 
   function render(){
