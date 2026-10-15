@@ -2150,6 +2150,13 @@
     writeJson(PLAN_KEY, pend); renderPlan(); updateSyncUi();
     if (syncKey()) syncNow();
   }
+  // save several days at once (moving days around changes the dates of each)
+  function storeDays(list){
+    const pend = planPending(), rev = Date.now();
+    list.forEach(day => { day.rev = rev; day.guide = GUIDE.id; pend[day.id] = { id:day.id, rev, day:JSON.parse(JSON.stringify(day)), name:day.title || day.date }; });
+    writeJson(PLAN_KEY, pend); renderPlan(); updateSyncUi();
+    if (syncKey()) syncNow();
+  }
   async function sendPlan(){
     const pend = planPending();
     for (const p of Object.values(pend)){
@@ -2217,6 +2224,7 @@
       const peek = rows.map(r => { const sp = r.st.spot ? findPlace(r.st.spot) : null; return sp ? sp.name : r.st.name; });
       const dots = rows.map(r => { const sp = r.st.spot ? findPlace(r.st.spot) : null, c = CATEGORIES[sp ? sp.cat : KIND_CAT[r.st.kind]] || CATEGORIES.other; return '<i style="background:' + c.color + '"></i>'; }).join('');
       h += '<section class="plan-day' + (open ? ' open' : '') + '" data-day="' + esc(d.id) + '"><button type="button" class="plan-day-head" data-pl="toggle-day" aria-expanded="' + open + '">' +
+        (days.length > 1 ? '<span class="plan-grip day-grip" aria-label="Drag to move this day" title="Drag to move this day"><svg viewBox="0 0 12 20" fill="currentColor" aria-hidden="true"><circle cx="3" cy="4" r="1.6"/><circle cx="9" cy="4" r="1.6"/><circle cx="3" cy="10" r="1.6"/><circle cx="9" cy="10" r="1.6"/><circle cx="3" cy="16" r="1.6"/><circle cx="9" cy="16" r="1.6"/></svg></span>' : '') +
         '<div class="plan-day-main"><div class="plan-date">Day ' + (di + 1) + ' · ' + esc(dayLabel(d)) + '</div>' + (d.title ? '<div class="plan-title">' + esc(d.title) + '</div>' : '') +
         (!open ? '<div class="plan-peek">' + (rows.length ? '<span class="plan-dots">' + dots + '</span><span class="plan-peek-t">' + esc(rows.length + (rows.length === 1 ? ' stop' : ' stops') + ' · ' + peek.map(n => n.replace(/\s*[（(].*$/, '')).join(' → ')) + '</span>' : 'No stops yet') + '</div>' : '') + '</div>' +
         '<div class="plan-span">' + esc(d.start) + (rows.length ? '–' + fmtT(rows[rows.length - 1].leave) : '') + '<svg class="plan-chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg></div></button>' + state +
@@ -2382,6 +2390,7 @@
   planPane.addEventListener('pointerdown', e => {
     const grip = e.target.closest('.plan-grip'); if (!grip || drag) return;
     e.preventDefault();
+    if (grip.classList.contains('day-grip')){ startDayDrag(e, grip); return; }
     const li = grip.closest('.plan-stop'), ol = li.parentElement;
     ol.classList.add('reordering'); li.classList.add('drag');
     try { grip.setPointerCapture(e.pointerId); } catch(err){}
@@ -2405,9 +2414,52 @@
     const lim = Math.max(first.offsetTop - 6, Math.min(last.offsetTop + last.offsetHeight - li.offsetHeight + 6, y));
     li.style.transform = 'translateY(' + (lim - li.offsetTop) + 'px)';
   }
-  planPane.addEventListener('pointermove', e => { if (!drag || e.pointerId !== drag.id) return; e.preventDefault(); drag.y = e.clientY; dragTo(e.clientY); });
+  // ---- drag a whole day by the handle in its heading: the days swap places and the dates stay in order,
+  // so moving day 4 up to the second place makes it day 2 (it takes that date) and the others shift down a day
+  function startDayDrag(e, grip){
+    const li = grip.closest('.plan-day');
+    planPane.classList.add('reordering-days'); li.classList.add('drag');      // open days fold while moving
+    try { grip.setPointerCapture(e.pointerId); } catch(err){}
+    drag = { day:true, li, grip, id:e.pointerId, before:[...planPane.querySelectorAll('.plan-day')].map(x => x.dataset.day), grab:li.offsetHeight / 2, y:e.clientY, timer:null };
+    dayDragTo(e.clientY);
+    drag.timer = setInterval(() => {
+      if (!drag) return;
+      const r = planPane.getBoundingClientRect(), top = r.top + hdrH + 30, bot = r.bottom - tabH - 30;
+      const dy = drag.y < top ? -Math.min(14, (top - drag.y) / 3 + 3) : drag.y > bot ? Math.min(14, (drag.y - bot) / 3 + 3) : 0;
+      if (dy){ planPane.scrollTop += dy; dayDragTo(drag.y); }
+    }, 16);
+  }
+  function dayDragTo(clientY){
+    const { li } = drag, pr = planPane.getBoundingClientRect();
+    const y = clientY - pr.top + planPane.scrollTop - drag.grab;
+    const sib = (el, dir) => { do el = el[dir]; while (el && !el.classList.contains('plan-day')); return el; };
+    let prev = sib(li, 'previousElementSibling'), next = sib(li, 'nextElementSibling');
+    while (prev && y < prev.offsetTop + prev.offsetHeight / 2){ planPane.insertBefore(li, prev); prev = sib(li, 'previousElementSibling'); }
+    while (next && y + li.offsetHeight > next.offsetTop + next.offsetHeight / 2){ planPane.insertBefore(li, next.nextSibling); next = sib(li, 'nextElementSibling'); }
+    const all = [...planPane.querySelectorAll('.plan-day')], first = all[0], last = all[all.length - 1];
+    const lim = Math.max(first.offsetTop - 6, Math.min(last.offsetTop + last.offsetHeight - li.offsetHeight + 6, y));
+    li.style.transform = 'translateY(' + (lim - li.offsetTop) + 'px)';
+  }
+  function endDayDrag(d){
+    d.li.style.transform = ''; d.li.classList.remove('drag'); planPane.classList.remove('reordering-days');
+    const after = [...planPane.querySelectorAll('.plan-day')].map(x => x.dataset.day);
+    if (after.join() === d.before.join()){ renderPlan(); return; }
+    const days = planDays(), dates = days.map(x => x.date);                  // already in date order
+    const changed = [];
+    after.forEach((id, i) => {
+      const day = days.find(x => x.id === id); if (!day || day.date === dates[i]) return;
+      const copy = JSON.parse(JSON.stringify(day)); copy.date = dates[i]; changed.push(copy);
+    });
+    if (!changed.length){ renderPlan(); return; }
+    const before = days.filter(x => changed.some(c => c.id === x.id)).map(x => JSON.parse(JSON.stringify(x)));
+    storeDays(changed);
+    toast('Days moved. Dates updated.', { action:'Undo', ms:6000, onAction: () => storeDays(before) });
+  }
+
+  planPane.addEventListener('pointermove', e => { if (!drag || e.pointerId !== drag.id) return; e.preventDefault(); drag.y = e.clientY; drag.day ? dayDragTo(e.clientY) : dragTo(e.clientY); });
   function endDrag(e){
     if (!drag || (e && e.pointerId !== drag.id)) return;
+    if (drag.day){ const d = drag; drag = null; clearInterval(d.timer); endDayDrag(d); return; }
     const d = drag; drag = null; clearInterval(d.timer);
     d.li.style.transform = ''; d.li.classList.remove('drag'); d.ol.classList.remove('reordering');
     const after = [...d.ol.querySelectorAll('.plan-stop')].map(x => x.dataset.stop);

@@ -793,7 +793,7 @@
   .plan-day-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; width:100%; padding:13px 14px 12px; cursor:pointer; border:0; background:none; text-align:left; color:inherit; font:inherit; }
   .plan-day.open .plan-day-head{ border-bottom:.5px solid var(--sep); }
   .plan-day-head:active{ background:var(--fill); }
-  .plan-day-main{ min-width:0; }
+  .plan-day-main{ min-width:0; flex:1 1 auto; }
   .plan-peek{ display:flex; align-items:center; gap:7px; margin-top:5px; font-size:13px; line-height:1.35; color:var(--label-2); }
   .plan-dots{ display:inline-flex; flex:0 0 auto; }
   .plan-peek-t{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -862,3 +862,11 @@
   .pick-name{ font-size:15px; font-weight:500; line-height:1.3; }
   .pick-sub{ font-size:12.5px; color:var(--label-2); line-height:1.3; }
   .pick-empty{ padding:12px 14px; font-size:14px; color:var(--label-2); }
+
+  /* moving whole days */
+  .plan-day-head .day-grip{ flex:0 0 22px; align-self:center; margin:0 0 0 -6px; padding:6px 0; }
+  .reordering-days .plan-stops, .reordering-days .plan-day-foot, .reordering-days .plan-state{ display:none; }
+  .reordering-days .plan-day.open .plan-day-head{ border-bottom:0; }
+  .reordering-days{ -webkit-user-select:none; user-select:none; }
+  .plan-day.drag{ position:relative; z-index:5; box-shadow:0 10px 28px rgba(60,40,20,.22); }
+  .plan-day.drag .day-grip{ color:var(--accent-ink); }
