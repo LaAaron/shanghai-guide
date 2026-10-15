@@ -104,16 +104,17 @@
   const catMatches = (p, cats) => !cats.size || cats.has(p.cat) || (cats.has('food') && isFood(p.cat));
   const foodOpen = () => activeCats.has('food') || [...activeCats].some(isFood);
   function matchesChips(p){ return catMatches(p, activeCats) && (activeDistrict === "all" || p.district === activeDistrict); }
+  // what the list shows and the map zooms to. While searching, the spots searched for always stay, and any category
+  // chips picked add their spots alongside (search "Lai Lai" + tap Stay = that restaurant and the hotels around it)
   function matchesFilters(p){
-    if (!catMatches(p, activeCats)) return false;
-    if (activeDistrict !== "all" && p.district !== activeDistrict) return false;
-    return matchesSearch(p);
+    if (activeDistrict !== "all" && p.district !== activeDistrict && !(searchTerm && matchesSearch(p))) return false;
+    if (!searchTerm) return catMatches(p, activeCats);
+    return matchesSearch(p) || (activeCats.size > 0 && catMatches(p, activeCats));
   }
   // How many spots each category chip / district option would show right now, given the OTHER filter and the search.
   function chipCounts(){
     const byCat = {}, byDist = {};
-    allPlaces().forEach(p => {
-      if (!matchesSearch(p)) return;
+    allPlaces().forEach(p => {                                            // counted without the search, so chips stay usable while searching
       if (activeDistrict === "all" || p.district === activeDistrict){
         byCat[p.cat] = (byCat[p.cat] || 0) + 1;
         if (isFood(p.cat)) byCat.food = (byCat.food || 0) + 1;
@@ -345,8 +346,8 @@
     markers = {};
     const pad = mapPad();
     // while searching, the map keeps every spot (so zooming out still shows them) and makes the matches big
-    const withCoords = allPlaces().filter(searchTerm ? matchesChips : matchesFilters).filter(p => p.lat && p.lng);
-    const hitOf = p => searchTerm ? matchesSearch(p) : undefined;
+    const withCoords = allPlaces().filter(searchTerm ? (p => matchesChips(p) || matchesSearch(p)) : matchesFilters).filter(p => p.lat && p.lng);
+    const hitOf = p => !searchTerm ? undefined : matchesSearch(p) ? true : activeCats.size && catMatches(p, activeCats) ? undefined : false;   // picked categories stay full size
 
     const seen = {};
     withCoords.forEach(p => {
