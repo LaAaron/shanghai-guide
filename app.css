@@ -807,6 +807,13 @@
   .plan-wait{ color:#2a7444; } .plan-late{ color:var(--warn-ink); font-weight:600; }
   .plan-stop{ cursor:pointer; padding-top:2px !important; padding-bottom:8px !important; }
   .plan-stop:active{ background:var(--fill); }
+  .plan-grip{ flex:0 0 32px; align-self:stretch; display:flex; align-items:center; justify-content:center; margin-right:-8px; color:var(--label-3); touch-action:none; cursor:grab; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+  .plan-grip svg{ width:10px; height:17px; }
+  .plan-stops.reordering .plan-move{ display:none; }
+  .plan-stops.reordering{ -webkit-user-select:none; user-select:none; }
+  .plan-stops.reordering .plan-stop:not(.drag){ transition:none; }
+  .plan-stop.drag{ position:relative; z-index:5; background:var(--row); border-radius:12px; box-shadow:0 10px 28px rgba(60,40,20,.22); cursor:grabbing; }
+  .plan-stop.drag .plan-grip{ color:var(--accent-ink); cursor:grabbing; }
   .plan-dot{ flex:0 0 30px; width:30px; height:30px; border-radius:9px; display:flex; align-items:center; justify-content:center; margin-top:6px; }
   .plan-dot svg{ width:18px; height:18px; }
   .plan-stops .pn{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; padding-top:6px; }

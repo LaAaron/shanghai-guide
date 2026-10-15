@@ -2227,7 +2227,8 @@
           '<span class="pn"><span class="plan-kind">' + esc(KIND_LABEL[st.kind] || 'Stop') + (st.stay ? ' · ' + fmtDur(st.stay) : '') + (st.at ? ' · booked ' + esc(st.at) : '') + '</span>' +
           '<b>' + esc(name) + '</b>' + (sp && sp.zh ? '<span class="zh">' + esc(sp.zh) + '</span>' : '') +
           (st.order ? '<span class="plan-order">Order: ' + esc(st.order) + '</span>' : '') + (st.note ? '<span class="plan-note">' + esc(st.note) + '</span>' : '') +
-          (sp ? '<span class="plan-acts"><button type="button" data-pl="map">Map</button><button type="button" data-pl="dir">Directions</button></span>' : '') + '</span></li>';
+          (sp ? '<span class="plan-acts"><button type="button" data-pl="map">Map</button><button type="button" data-pl="dir">Directions</button></span>' : '') + '</span>' +
+          (rows.length > 1 ? '<span class="plan-grip" aria-label="Drag to reorder" title="Drag to reorder"><svg viewBox="0 0 12 20" fill="currentColor" aria-hidden="true"><circle cx="3" cy="4" r="1.6"/><circle cx="9" cy="4" r="1.6"/><circle cx="3" cy="10" r="1.6"/><circle cx="9" cy="10" r="1.6"/><circle cx="3" cy="16" r="1.6"/><circle cx="9" cy="16" r="1.6"/></svg></span>' : '') + '</li>';
       });
       h += '</ol><button type="button" class="plan-add" data-pl="add-stop">+ Add a stop</button></section>';
     });
@@ -2330,7 +2331,51 @@
     stopCtx.day.stops.splice(stopCtx.i, 1); stopSheet.close(); storeDay(stopCtx.day);
   });
 
+  // ---- drag a stop by its handle to reorder the day (journey rows fold away while dragging; times update on drop)
+  let drag = null;
+  planPane.addEventListener('pointerdown', e => {
+    const grip = e.target.closest('.plan-grip'); if (!grip || drag) return;
+    e.preventDefault();
+    const li = grip.closest('.plan-stop'), ol = li.parentElement;
+    ol.classList.add('reordering'); li.classList.add('drag');
+    try { grip.setPointerCapture(e.pointerId); } catch(err){}
+    drag = { li, ol, grip, id:e.pointerId, dayId:li.closest('.plan-day').dataset.day, before:[...ol.querySelectorAll('.plan-stop')].map(x => x.dataset.stop),
+      grab:e.clientY - ol.getBoundingClientRect().top - li.offsetTop, y:e.clientY, timer:null };
+    drag.timer = setInterval(() => {                                    // scroll the plan when holding near its top or bottom edge
+      if (!drag) return;
+      const r = planPane.getBoundingClientRect(), top = r.top + hdrH + 30, bot = r.bottom - tabH - 30;
+      const dy = drag.y < top ? -Math.min(14, (top - drag.y) / 3 + 3) : drag.y > bot ? Math.min(14, (drag.y - bot) / 3 + 3) : 0;
+      if (dy){ planPane.scrollTop += dy; dragTo(drag.y); }
+    }, 16);
+  });
+  function dragTo(clientY){
+    const { li, ol } = drag;
+    const y = clientY - ol.getBoundingClientRect().top - drag.grab;
+    const sib = (el, dir) => { do el = el[dir]; while (el && !el.classList.contains('plan-stop')); return el; };   // skip the (hidden) journey rows
+    let prev = sib(li, 'previousElementSibling'), next = sib(li, 'nextElementSibling');
+    while (prev && y < prev.offsetTop + prev.offsetHeight / 2){ ol.insertBefore(li, prev); prev = sib(li, 'previousElementSibling'); }
+    while (next && y + li.offsetHeight > next.offsetTop + next.offsetHeight / 2){ ol.insertBefore(li, next.nextSibling); next = sib(li, 'nextElementSibling'); }
+    const first = ol.querySelector('.plan-stop'), last = [...ol.querySelectorAll('.plan-stop')].pop();
+    const lim = Math.max(first.offsetTop - 6, Math.min(last.offsetTop + last.offsetHeight - li.offsetHeight + 6, y));
+    li.style.transform = 'translateY(' + (lim - li.offsetTop) + 'px)';
+  }
+  planPane.addEventListener('pointermove', e => { if (!drag || e.pointerId !== drag.id) return; e.preventDefault(); drag.y = e.clientY; dragTo(e.clientY); });
+  function endDrag(e){
+    if (!drag || (e && e.pointerId !== drag.id)) return;
+    const d = drag; drag = null; clearInterval(d.timer);
+    d.li.style.transform = ''; d.li.classList.remove('drag'); d.ol.classList.remove('reordering');
+    const after = [...d.ol.querySelectorAll('.plan-stop')].map(x => x.dataset.stop);
+    if (after.join() === d.before.join()) return;
+    const day = planDays().find(x => x.id === d.dayId); if (!day) return;
+    const copy = JSON.parse(JSON.stringify(day));
+    copy.stops = after.map(id => copy.stops.find(s => s.id === id)).filter(Boolean);
+    storeDay(copy);
+  }
+  planPane.addEventListener('pointerup', endDrag);
+  planPane.addEventListener('pointercancel', endDrag);
+
   planPane.addEventListener('click', e => {
+    if (e.target.closest('.plan-grip')) return;
     const b = e.target.closest('[data-pl]'), dayEl = e.target.closest('.plan-day'), stopEl = e.target.closest('.plan-stop');
     const act = b ? b.dataset.pl : stopEl ? 'edit-stop' : null;
     if (!act) return;
