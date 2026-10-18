@@ -932,9 +932,9 @@
   /* ---------- Directions ---------- */
   const dirSheet = makeSheet($('dir-backdrop'), $('dir-sheet'));
   const dirFrom = $('dir-from');
-  const dirFromText = $('dir-from-text');
-  const dirFromWrap = $('dir-from-wrap');
   let dirTarget = null, dirMode = 'walk';
+  // where directions start: your current location, a spot in the guide, or a typed address (picked like the search box)
+  let dirStart = { kind:'here' };
   const FROM_KEY = 'shanghai-eats-last-origin';
 
   document.addEventListener('click', e => {
@@ -946,13 +946,56 @@
     document.querySelectorAll('#dir-mode button').forEach(x => x.classList.toggle('on', x === b));
     updateLinks();
   }));
-  dirFrom.addEventListener('change', () => {
-    dirFromWrap.hidden = dirFrom.value !== '__text';
-    if (!dirFromWrap.hidden) dirFromText.focus();
-    try{ localStorage.setItem(FROM_KEY, dirFrom.value); }catch(e){}
+  const fromBox = document.createElement('div'); fromBox.className = 'pick-list'; fromBox.hidden = true;
+  dirFrom.closest('.field').appendChild(fromBox);
+  let fromItems = [];
+  function setStart(st){
+    dirStart = st;
+    dirFrom.value = st.kind === 'spot' ? (findAny(st.id) || {}).name || '' : st.kind === 'text' ? st.text : '';
+    try{ localStorage.setItem(FROM_KEY, st.kind === 'spot' ? st.id : st.kind === 'text' ? '__text:' + st.text : '__here'); }catch(e){}
     updateLinks();
+  }
+  function showFrom(){
+    const q = dirFrom.value.trim().toLowerCase(), cur = dirStart.kind === 'spot' ? (findAny(dirStart.id) || {}).name : '';
+    const typing = q && q !== (cur || '').toLowerCase() && !(dirStart.kind === 'text' && q === dirStart.text.toLowerCase());
+    const pool = allPlaces().filter(x => dirTarget && x.id !== dirTarget.id && x.lat && x.lng && x.district !== 'Multiple');
+    const rank = p => { const n = p.name.toLowerCase(), z = p.zh || '';
+      if (!typing) return 0;
+      if (n.startsWith(q) || z.startsWith(q)) return 1;
+      if (n.split(/[\s(（·-]+/).some(w => w.startsWith(q))) return 2;
+      if ((n + ' ' + z + ' ' + (p.addr || '').toLowerCase()).includes(q)) return 3;
+      return 9; };
+    fromItems = pool.map(p => ({ p, r:rank(p) })).filter(x => x.r < 9)
+      .sort((a, b) => a.r - b.r || (b.p.cat === 'stay') - (a.p.cat === 'stay') || a.p.name.localeCompare(b.p.name)).slice(0, 80).map(x => x.p);
+    const row = (i, name, sub, color, cls) => '<button type="button" class="pick-row' + (cls || '') + '" data-i="' + i + '">' + (color ? '<i style="background:' + color + '"></i>' : '') +
+      '<span class="pick-name">' + name + '</span>' + (sub ? '<span class="pick-sub">' + sub + '</span>' : '') + '</button>';
+    fromBox.innerHTML = row('here', 'My current location', 'Uses your phone’s location', '', ' typed') +
+      (typing && !fromItems.some(p => p.name.toLowerCase() === q) ? row('text', 'Use “' + esc(dirFrom.value.trim()) + '”', 'as an address (Apple & Google Maps; AMap starts from your location)', '', ' typed') : '') +
+      fromItems.map((p, i) => { const c = CATEGORIES[p.cat] || CATEGORIES.other;
+        return row(i, esc(p.name), esc([p.zh, p.district !== 'Unsorted' ? p.district : '', c.label].filter(Boolean).join(' · ')), c.color); }).join('');
+    fromBox.hidden = false; fromBox.scrollTop = 0;
+  }
+  dirFrom.addEventListener('focus', () => { dirFrom.select(); showFrom(); });
+  dirFrom.addEventListener('input', showFrom);
+  dirFrom.addEventListener('blur', () => setTimeout(() => {
+    fromBox.hidden = true;
+    const v = dirFrom.value.trim();                                          // left with typed text: use it as an address
+    if (!v) setStart({ kind:'here' });
+    else if (!(dirStart.kind === 'spot' && v === (findAny(dirStart.id) || {}).name) && !(dirStart.kind === 'text' && v === dirStart.text)){
+      const sp = fromItems.find(p => p.name.toLowerCase() === v.toLowerCase());
+      setStart(sp ? { kind:'spot', id:sp.id } : { kind:'text', text:v });
+    }
+  }, 150));
+  dirFrom.addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); dirFrom.blur(); } });
+  fromBox.addEventListener('pointerdown', e => e.preventDefault());
+  fromBox.addEventListener('click', e => {
+    const b = e.target.closest('.pick-row'); if (!b) return;
+    const i = b.dataset.i;
+    if (i === 'here') setStart({ kind:'here' });
+    else if (i === 'text') setStart({ kind:'text', text:dirFrom.value.trim() });
+    else setStart({ kind:'spot', id:fromItems[+i].id });
+    fromBox.hidden = true; dirFrom.blur();
   });
-  dirFromText.addEventListener('input', updateLinks);
   $('dir-close').addEventListener('click', () => dirSheet.close());
 
   function stationPlace(id){
@@ -971,14 +1014,10 @@
     $('dir-zh').hidden = !p.zh;
     $('dir-addr').textContent = p.addr || '';
     let saved = null; try{ saved = localStorage.getItem(FROM_KEY); }catch(e){}
-    dirFrom.innerHTML = '';
-    const opt = (v,t) => { const o = document.createElement('option'); o.value = v; o.textContent = t; dirFrom.appendChild(o); };
-    opt('__here', 'My current location');
-    opt('__text', 'Type an address…');
-    allPlaces().filter(x => x.id !== p.id && x.lat && x.lng && x.district !== 'Multiple')
-      .forEach(x => opt(x.id, 'From ' + x.name));
-    dirFrom.value = [...dirFrom.options].some(o => o.value === saved) ? saved : '__here';
-    dirFromWrap.hidden = dirFrom.value !== '__text';
+    const sp = saved && saved !== '__here' && !saved.startsWith('__text') ? findAny(saved) : null;
+    dirStart = saved && saved.startsWith('__text:') ? { kind:'text', text:saved.slice(7) } : sp && sp.id !== p.id ? { kind:'spot', id:sp.id } : { kind:'here' };
+    dirFrom.value = dirStart.kind === 'spot' ? sp.name : dirStart.kind === 'text' ? dirStart.text : '';
+    fromBox.hidden = true;
     const warn = [];
     if (p.district === 'Multiple') warn.push('This place has several branches — use “search by name” to find the nearest one.');
     else if (p.flag) warn.push(p.flag + '. Search by name in AMap to double-check.');
@@ -1015,8 +1054,8 @@
     const label = p.zh || p.name;
     const q = encodeURIComponent;
     let from = null, fromText = '';
-    if (dirFrom.value === '__text') fromText = dirFromText.value.trim();
-    else if (dirFrom.value !== '__here') from = findAny(dirFrom.value);
+    if (dirStart.kind === 'text') fromText = dirStart.text;
+    else if (dirStart.kind === 'spot') from = findAny(dirStart.id);
 
     const chinaMaps = GUIDE.china !== false;                       // AMap (and its advice about VPNs) only makes sense in mainland China
     $('lnk-amap-search').hidden = !chinaMaps;
