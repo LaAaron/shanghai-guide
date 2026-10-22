@@ -2326,7 +2326,8 @@
   function renderPlan(){
     if (!planPane) return;
     const days = planDays(), pend = planPending();
-    let h = '<div class="plan-head"><div><h2>Plan</h2><p>' + esc(GUIDE.place) + ' · ' + (days.length ? days.length + (days.length === 1 ? ' day' : ' days') : 'no days yet') + '</p></div>' +
+    const dates = []; days.forEach(d => { if (!dates.includes(d.date)) dates.push(d.date); });   // two plans for one date (options) share a day number
+    let h = '<div class="plan-head"><div><h2>Plan</h2><p>' + esc(GUIDE.place) + ' · ' + (dates.length ? dates.length + (dates.length === 1 ? ' day' : ' days') : 'no days yet') + '</p></div>' +
       '<button type="button" class="dir-btn primary" data-pl="add-day">Add a day</button></div>';
     if (!days.length) h += '<div class="empty-msg">Add a day, then add the places you\'ll go in order: breakfast, sights, lunch, shopping, dinner…<br>Times are worked out as you go, and you can note what to order.</div>';
     days.forEach((d, di) => {
@@ -2337,7 +2338,7 @@
       const dots = rows.map(r => { const sp = r.st.spot ? findPlace(r.st.spot) : null, c = CATEGORIES[sp ? sp.cat : KIND_CAT[r.st.kind]] || CATEGORIES.other; return '<i style="background:' + c.color + '"></i>'; }).join('');
       h += '<section class="plan-day' + (open ? ' open' : '') + '" data-day="' + esc(d.id) + '"><button type="button" class="plan-day-head" data-pl="toggle-day" aria-expanded="' + open + '">' +
         (days.length > 1 ? '<span class="plan-grip day-grip" aria-label="Drag to move this day" title="Drag to move this day"><svg viewBox="0 0 12 20" fill="currentColor" aria-hidden="true"><circle cx="3" cy="4" r="1.6"/><circle cx="9" cy="4" r="1.6"/><circle cx="3" cy="10" r="1.6"/><circle cx="9" cy="10" r="1.6"/><circle cx="3" cy="16" r="1.6"/><circle cx="9" cy="16" r="1.6"/></svg></span>' : '') +
-        '<div class="plan-day-main"><div class="plan-date">Day ' + (di + 1) + ' · ' + esc(dayLabel(d)) + '</div>' + (d.title ? '<div class="plan-title">' + esc(d.title) + '</div>' : '') +
+        '<div class="plan-day-main"><div class="plan-date">Day ' + (dates.indexOf(d.date) + 1) + ' · ' + esc(dayLabel(d)) + '</div>' + (d.title ? '<div class="plan-title">' + esc(d.title) + '</div>' : '') +
         (!open ? '<div class="plan-peek">' + (rows.length ? '<span class="plan-dots">' + dots + '</span><span class="plan-peek-t">' + esc(rows.length + (rows.length === 1 ? ' stop' : ' stops') + ' · ' + peek.map(n => n.replace(/\s*[（(].*$/, '')).join(' → ')) + '</span>' : 'No stops yet') + '</div>' : '') + '</div>' +
         '<div class="plan-span">' + esc(d.start) + (rows.length ? '–' + fmtT(rows[rows.length - 1].leave) : '') + '<svg class="plan-chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg></div></button>' + state +
         (!open ? '</section>' : '') ;
